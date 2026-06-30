@@ -3,6 +3,8 @@ import math
 
 class Robot():
     """
+    The robot; such like drawing, translation, position, orientation.
+
     start : tuple (x, y, theta)
     robot_img : str (list of paths for robot imgs - init, goal, robot)
     length : float (lenth b/w rear and front wheels)
@@ -40,8 +42,10 @@ class Robot():
         # Map: pygame.Surface
         map.blit(source=self.rotated, dest=self.rect)
 
+    #TODO: Get rid of "event"
     def move(self, event=None, u=None):
-        
+        # Move the img of the robot
+
         # Establish the control input u
         self.u1, self.u2 = u #u1 linear, u2 angular
 
