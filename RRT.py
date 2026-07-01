@@ -274,7 +274,7 @@ class Graph():
         self.robot_last_position.append(position)
         self.robot_last_orientation.append(orientation)
 
-    def path_to_go(self):
+    def path_to_goal(self):
         # Given x_goal node, it searches next parent until it reaches the x_init node
         self.path = []
         self.path.append(self.goal_configuration)
@@ -384,7 +384,7 @@ class Graph():
 
         self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
 
-    def draw_random_configuration(self, robot_img, environment):
+    def draw_random_robot_configuration(self, robot_img, environment):
         # Draw the robot's x_rand configuration
         position = self.x_rand[:2]
         orientation = math.degrees(self.x_rand[2])

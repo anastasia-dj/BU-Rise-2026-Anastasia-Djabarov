@@ -54,7 +54,7 @@ class Robot():
         self.y -= self.u1 * math.sin(math.radians(self.theta)) * self.dt # delta Y
 
         # Translation and rotation animation
-        self.rotated = pygame.transform.rotozom(surface=self.img, angle=self.theta, scale=1);
+        self.rotated = pygame.transform.rotozoom(surface=self.img, angle=self.theta, scale=1);
         self.rect = self.rotated.get_rect(center=(self.x, self.y)) # Update bounding rectangle
 
         # Save history of points
