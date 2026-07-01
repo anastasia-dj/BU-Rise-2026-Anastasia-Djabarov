@@ -100,9 +100,12 @@ def main():
         graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
         graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
 
+        print(f"k={k}, is_goal_found={graph.is_goal_found}, is_fwd_finished={graph.is_forward_simulation_finished}, robot.dt={robot.dt}")
+
         if args.show_tree_building:
             environment.draw_trajectory_trail()
         
+        '''RRT LOGIC HERE:'''
         # If the goal is not found
         if not graph.is_goal_found:
             # If the forward simulation is not finished
@@ -175,7 +178,7 @@ def main():
                     graph.draw_random_node(map=environment.map)
 
                 iteration+=1
-                robot.dt == args.delta 
+                robot.dt += args.delta 
 
                 if not graph.is_goal_found:
                     pygame.display.update()

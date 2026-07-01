@@ -48,7 +48,7 @@ class Environment():
             trail_set_start = self.trail_set[i][0], self.trail_set[i][1] 
             trail_set_end = self.trail_set[i+1][0], self.trail_set[i+1][1]
             if draw_trail:
-                pygame.draw.line(surface=self.map, color=self.BROWN, start_pos=trail_set_start, endpos=trail_set_end)
+                pygame.draw.line(surface=self.map, color=self.BROWN, start_pos=trail_set_start, end_pos=trail_set_end)
 
         self.trail_set.append(position)
 

@@ -52,6 +52,7 @@ class Robot():
         # Car kinematic model
         self.x += self.u1 * math.cos(math.radians(self.theta)) * self.dt # delta X
         self.y -= self.u1 * math.sin(math.radians(self.theta)) * self.dt # delta Y
+        self.theta += self.u2 * self.dt
 
         # Translation and rotation animation
         self.rotated = pygame.transform.rotozoom(surface=self.img, angle=self.theta, scale=1);

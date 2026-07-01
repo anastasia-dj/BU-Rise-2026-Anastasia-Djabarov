@@ -216,6 +216,7 @@ class Graph():
             # float (Best orientation towards x_rand)
         if obstacles is None:
             obstacles = []
+            
         
         self.obstacles = obstacles
 
@@ -379,7 +380,7 @@ class Graph():
 
     def draw_goal_robot_configuration(self, robot_img, environment):
         # Draw the robot's x_goal configuration
-        position = self.x_init[:2]
+        position = self.x_goal[:2]
         orientation = math.degrees(self.x_init[2])
 
         self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
@@ -414,7 +415,7 @@ class Graph():
 
         for x,y,theta in zip(x_interpolation, y_interpolation, theta_interpolation):
             for interpolation, (i,j,k) in enumerate(zip(x,y,theta)):
-                if self.obstcales != []:
+                if self.obstacles != []:
                     environment.draw_obstacles()
 
                 # Frame rate of the robot drawing, in a way        
