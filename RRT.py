@@ -358,11 +358,101 @@ class Graph():
         pygame.draw.circle(surface=map, color=self.BLUE, center=self.x_init[:2], radius=3)
     
     def draw_goal_node(self, map):
-        #Draw the x_goal node on the map
+        # Draw the x_goal node on the map
         pygame.draw.circle(surface=map, color=self.RED, center=self.x_goal[:2], radius=3)
 
     def draw_random_node(self, map):
-        #Draw the x_rand node on the map
+        # Draw the x_rand node on the map
         pygame.draw.circle(surface=map, color=self.GREEN, center=self.x_rand[:2], radius=3)
 
+    def draw_new_node(self, map):
+        # Draw the x_new node on the map\
+        for i in range(len(self.u_news)):
+            pygame.draw.circle(surface=map, color=self.BROWN, center=self.u_news[i], radius=3)
     
+    def draw_initial_robot_configuration(self, robot_img, environment):
+        # Draw the robot's x_init config 
+        position = self.x_init[:2]
+        orientation = math.degrees(self.x_init[2])
+
+        self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
+
+    def draw_goal_robot_configuration(self, robot_img, environment):
+        # Draw the robot's x_goal configuration
+        position = self.x_init[:2]
+        orientation = math.degrees(self.x_init[2])
+
+        self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
+
+    def draw_random_configuration(self, robot_img, environment):
+        # Draw the robot's x_rand configuration
+        position = self.x_rand[:2]
+        orientation = math.degrees(self.x_rand[2])
+        
+        # Needs to be rect to check for collision
+        rect = self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
+
+        return rect;
+
+    def draw_new_robot_configuration(self, robot_img, environment):
+        # Draw a robot's configuration at every new node
+        for i in range(len(self.u_news)):
+            position = self.u_news[i]
+            orientation = self.theta_news[i]
+            self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
+
+    def draw_path_to_goal(self, map):
+        # Draw the path from x_init node to x_goal node
+        for i in range(len(self.path_coordinates)-1):
+            pygame.draw.circle(surface=map, color=self.BLACK, center=self.path_coordinates[i],radius=3)
+
+    def draw_interpolation(self, robot, environment):
+        # Shows the robot driving from starting pos to goal
+        x_interpolation = self.x_interpolation[1:] # x interpolation holds path coordinates
+        y_interpolation = self.y_interpolation[1:]
+        theta_interpolation = self.theta_interpolation[1:]
+
+        for x,y,theta in zip(x_interpolation, y_interpolation, theta_interpolation):
+            for interpolation, (i,j,k) in enumerate(zip(x,y,theta)):
+                if self.obstcales != []:
+                    environment.draw_obstacles()
+
+                # Frame rate of the robot drawing, in a way        
+                if interpolation%self.interpolation_factor == 0:
+                    self.draw_robot_configuration(image=robot.img, position=(i,j), orientation=k, environment=environment)
+        
+        # Draw the initial and goal points
+        self.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+        self.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+
+        pygame.display.update()
+        pygame.time.delay(5000)
+        environment.map.fill(self.WHITE)
+
+    def draw_trajectory(self, robot, environment):
+        # Draw the interpolation from the init config to the goal config
+        x_interpolation = self.x_interpolation[1:]
+        y_interpolation = self.y_interpolation[1:]
+        theta_interpolation = self.theta_interpolation[1:]
+
+        for x,y,theta in zip(x_interpolation, y_interpolation, theta_interpolation):
+            for interpolation, (i,j,k) in enumerate(zip(x,y,theta)):
+                if self.obstacles != []:
+                    environment.draw_obstacles()
+                
+                self.draw_initial_robot_configuration(robot.init, environment=environment)
+                self.draw_initial_goal_configuration(robot.goal, environment=environment)
+                self.draw_robot_configuration(image=robot.img, position=(i,j), orientation=k, environment=environment)
+
+                # Refresh the screen
+                pygame.display.update()
+                pygame.time.delay(3)
+                environment.map.fill(self.WHITE)
+    
+    def draw_robot_configuration(self, image, position, orientation, environment):
+        # Create the translation & rotation animation
+        rotated = pygame.transform.rotozoom(surface=image, angle=orientation, scale=1)
+        rect = rotated.get_rect(center=position)
+        environment.map.blit(source=rotated, dest=rect)
+
+        return rect
