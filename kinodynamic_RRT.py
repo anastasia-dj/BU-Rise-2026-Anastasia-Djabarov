@@ -89,6 +89,7 @@ def main():
     while run and k < args.nodes:
         # Set loop run to 60 FPS
         clock.tick(environment.FPS)
+        print(f"top of while loop, is_fwd_finished={graph.is_forward_simulation_finished}, dt={robot.dt}")
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -100,12 +101,9 @@ def main():
         graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
         graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
 
-        print(f"k={k}, is_goal_found={graph.is_goal_found}, is_fwd_finished={graph.is_forward_simulation_finished}, robot.dt={robot.dt}")
-
         if args.show_tree_building:
             environment.draw_trajectory_trail()
         
-        '''RRT LOGIC HERE:'''
         # If the goal is not found
         if not graph.is_goal_found:
             # If the forward simulation is not finished
@@ -116,73 +114,72 @@ def main():
                 rand_collision_free = graph.is_free(configuration=random_rect, obstacles=obstacles)
 
                 # Propagate with random control function generally toward goal
-                if rand_collision_free:
-                    x_new = graph.new_state(x_rand, robot, event, environment, obstacles)
-                    
-                    # If the path did not collide with something...
-                    if x_new is not None:
-                        tree.append(x_new[0]) # Returns a tuple of configuration
-                        orientation_tree.append(x_new[1]) # Returns orientation
+            if rand_collision_free:
+                x_new = graph.new_state(x_rand, robot, event, environment, obstacles)
+                
+                # If the path did not collide with something...
+                if x_new is not None:
+                    tree.append(x_new[0]) # Returns a tuple of configuration
+                    orientation_tree.append(x_new[1]) # Returns orientation
 
-                        # Update note ID list and parent list with x_new
-                        values.append(node_value)
-                        parent = graph.generate_parents(values, parent)
+                    # Update note ID list and parent list with x_new
+                    values.append(node_value)
+                    parent = graph.generate_parents(values, parent)
 
-                        # Update node list, number of free collisions and sampled config (K)
-                        node_value+=1
-                        graph.number_of_nodes = len(tree)
-                        graph.num_free_collision += 1 # Is 0 in Espinoza's version
-                        k += 1
+                    # Update node list, number of free collisions and sampled config (K)
+                    node_value+=1
+                    graph.number_of_nodes = len(tree)
+                    graph.num_free_collision = 0	
+                    k += 1
 
                     # if goal is found
-                    if graph.is_goal_found:
-                        graph.parent = parent # Attaches growing parent list to graph.parent
-                        graph.tree = tree # Attaches growing tree list to graph.tree
-                        graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
-                        
-                        # Get the list of node IDs of the winning route
-                        graph.path_to_goal() 
-
-                        # Get those node IDs and make (x,y) coordinate pairs and recover step-by-step movement data
-                        graph.get_path_coordinates()
-
-                #TODO: Get rid of draw_new_robot config?
-                # For this to run, both need to be explicitly ENABLED
-                if args.show_new_configurations and args.show_tree_building:
-                    # Draws a small rotated robot image at every node position added to the tree 
-                    graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
-                    # Draws a small brown circle at every node position
-                    graph.draw_new_node(map=environment.map)
-
-                # Goal is found but show_tree_building is off
                 if graph.is_goal_found:
-                    if not args.show_tree_building:
-                        environment.show_screen()
-                        graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                        graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-                        environment.draw_trajectory_trail()
-                        pygame.display.update()
-                        pygame.time.delay(3000)
-
-                    # Display such and such
-                    if args.path_to_goal:
-                        graph.draw_path_to_goal(map=environment.map)
-                    if args.move_robot:
-                        graph.draw_trajectory(robot=robot, environment=environment)
-                    if args.show_interpolation:
-                        graph.draw_interpolation(robot=robot, environment=environment)
+                    graph.parent = parent # Attaches growing parent list to graph.parent
+                    graph.tree = tree # Attaches growing tree list to graph.tree
+                    graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
                     
+                    # Get the list of node IDs of the winning route
+                    graph.path_to_goal() 
 
-                if rand_collision_free and args.show_random_configurations and args.show_tree_building:
-                    random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
-                    graph.draw_random_node(map=environment.map)
+                    # Get those node IDs and make (x,y) coordinate pairs and recover step-by-step movement data
+                    graph.get_path_coordinates()
 
-                iteration+=1
-                robot.dt += args.delta 
+        # For this to run, both need to be explicitly ENABLED
+        if args.show_new_configurations and args.show_tree_building:
+            # Draws a small rotated robot image at every node position added to the tree 
+            graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
+            # Draws a small brown circle at every node position
+            graph.draw_new_node(map=environment.map)
 
-                if not graph.is_goal_found:
-                    pygame.display.update()
-                    environment.map.fill(environment.WHITE)
+            # Goal is found but show_tree_building is off
+        if graph.is_goal_found:
+            if not args.show_tree_building:
+                environment.show_screen()
+                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+                environment.draw_trajectory_trail()
+                pygame.display.update()
+                pygame.time.delay(3000)
+
+            # Display such and such
+            if args.path_to_goal:
+                graph.draw_path_to_goal(map=environment.map)
+            if args.move_robot:
+                graph.draw_trajectory(robot=robot, environment=environment)
+            if args.show_interpolation:
+                graph.draw_interpolation(robot=robot, environment=environment)
+            
+
+        if rand_collision_free and args.show_random_configurations and args.show_tree_building:
+            random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
+            graph.draw_random_node(map=environment.map)
+
+        iteration +=1
+        robot.dt += args.delta 
+
+        if not graph.is_goal_found:
+            pygame.display.update()
+            environment.map.fill(environment.WHITE)
 
     pygame.quit()
     sys.exit()
