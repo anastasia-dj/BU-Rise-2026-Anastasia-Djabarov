@@ -74,12 +74,14 @@ class Graph():
         self.BROWN = (189, 154, 122)
 
     def is_free(self, configuration, obstacles):
-        """Check if a config will collide with an obstacle
+        """
+        Check if a config will collide with an obstacle
         PARAMETERS:
             configuration : pygame.Rect
             obstacles : pygame.Rect
         RETURNS:
-            bool (If configuration is free of obstacles)"""
+            bool (If configuration is free of obstacles)
+            """
 
         for obstacle in obstacles:
             if obstacle.colliderect(configuration):
@@ -87,11 +89,13 @@ class Graph():
         return True
 
     def generate_random_node(self, bias):
-        """Generates a random configuratin
+        """
+        Generates a random configuratin
         PARAMETERS:
             bias : int (Goal bias percentage)
         RETURNS: 
-            tuple : coordinate of random node"""
+            tuple : coordinate of random node
+        """
 
         #Sample a robot config in (x, y, theta)
         self.x_rand = int(random.uniform(0, self.WIDTH)), int(random.uniform(0, self.HEIGHT)), math.radians(random.uniform(0, 360))
@@ -105,13 +109,15 @@ class Graph():
         return self.x_rand
     
     def metric(self, p1, p2):
-        """Definition of the metric for a car (C = R^2 x S)
+        """
+        Definition of the metric for a car (C = R^2 x S)
         In other words: How far are p1 and p2?
         PARAMETERS
             p1 : int (Start configuration)
             p2 : int (End configuration)
         RETURNS
-            float (R^2 x S metric)"""
+            float (R^2 x S metric)
+        """
 
         # Angle wraparound
         theta = self.x_rand[2] #in rad
@@ -121,12 +127,14 @@ class Graph():
         return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + alpha**2)
     
     def nearest_neighbor(self, tree, x_rand):
-        """Returns the index of the nearest neighbor to randomly generated config (x_rand)
+        """
+        Returns the index of the nearest neighbor to randomly generated config (x_rand)
         PARAMETERS
             tree : list (Tree containing ALL configurations)
             x_rand : tuple (x, y, and theta of random node generated)
         RETURNS
-            tuple (Nearest node to random node generated)"""
+            tuple (Nearest node to random node generated)
+        """
         distances = []
 
         # Collect all the distances between each state and x-rand
@@ -141,13 +149,15 @@ class Graph():
         return x_near
     
     def simulate(self, robot, event, environment, obstacles):
-        """It simulates the robot configuration from u (control input)
+        """
+        It simulates the robot configuration from u (control input)
         PARAMETERS
             robot : robot object (Where all control inputs are simulated)
             event : Event (All events happening on screen)
             environment : environment object (Environment to draw trails & simulations fwd)
         RETURNS
-            list : Collection of positions the robot has passed through"""
+            list : Collection of positions the robot has passed through
+        """
 
         time = robot.dt
         self.is_forward_simulation_finished = False
@@ -211,14 +221,16 @@ class Graph():
                 return None
             
     def new_state(self, x_rand, robot, event, environment, obstacles=None):
-        """Propagates a small step towards a random node (Given fwd simulations, selects the more suitable to advance toward x_rand)
+        """
+        Propagates a small step towards a random node (Given fwd simulations, selects the more suitable to advance toward x_rand)
         PARAMETERS
             x_rand : tuple (Coordinates of random generated node)
             robot: robot object (Robot w/ simulated control inputs)
             event : Event (All events happening on screen) (Unused?)
         RETURNS
             tuple (Best position towards x_rand)
-            float (Best orientation towards x_rand)"""
+            float (Best orientation towards x_rand)
+        """
         if obstacles is None:
             obstacles = []
 
@@ -252,12 +264,14 @@ class Graph():
             return self.x_new, self.theta_new
         
     def generate_parents(self, values, parent):
-        """Generates a list of parents given value of node and nearest neighbor
+        """
+        Generates a list of parents given value of node and nearest neighbor
         PARAMETERS
             values : list (Node IDs)
             parent : list (Previous collection of parent nodes until the new is processed)
         RETURNS
-            list (Ordered collection of the parents)"""
+            list (Ordered collection of the parents)
+        """
 
         parent_value = values[self.min_distance] 
         parent_index = len(parent) 
@@ -339,22 +353,26 @@ class Graph():
                     print(f"Rewired node {original_new_node_index} to parent {parent[original_new_node_index]}, cost {best_cost:.3f}")
 
     def store_configuration(self, position, orientation):
-        """Stores the current robot configuration to an ongoing list for later use
+        """
+        Stores the current robot configuration to an ongoing list for later use
         PARAMETERS
             position : tuple (X,Y in C-space)
             orientation : tuple (theta in C-space)
         RETURNS
-            None"""
+            None
+        """
         self.robot_last_position.append(position)
         self.robot_last_orientation.append(orientation)
 
     def path_to_goal(self):
-        """Given x_goal node, it searches next parent until it reaches the x_init node
+        """
+        Given x_goal node, it searches next parent until it reaches the x_init node
         PARAMETERS
             none
         RETURNS
             none
-        In other words, it finds the path from x_init to x_goal."""
+        In other words, it finds the path from x_init to x_goal.
+        """
         self.path = []
         self.path.append(self.goal_configuration)
         new_configuration = self.parent[self.goal_configuration]
@@ -367,12 +385,15 @@ class Graph():
         # Append parent 0 (x_init)
         self.path.append(0)
 
+    # TODO: Issue with path generations
     def get_path_coordinates(self):
-        """Collects correspondant coordinates
+        """
+        Collects correspondant coordinates
         PARAMETERS
             None
         RETURNS
-            Coordinates for successful path"""
+            Coordinates for successful path
+        """
 
         self.path_coordinates = []
 
@@ -393,12 +414,14 @@ class Graph():
     
     # TODO: Outdated
     def get_path_controls(self):
-        """Extracts u1 and u2 from a path (organized init->goal) and returns.
+        """
+        Extracts u1 and u2 from a path (organized init->goal) and returns.
         Note: Must be called AFTER path_to_goal and get_path_coordinates
         PARAMETERS
             none
         RETURNS
-            Controls for successful path : list"""
+            Controls for successful path : list
+        """
 
         self.path_controls = []
         for i in range(len(self.x_position)):
@@ -414,11 +437,13 @@ class Graph():
 
     # TODO: Outdated 
     def reverse_path(self):
-        """ Reverse the control sequence used to reach the goal in order to reach init again
+        """
+        Reverse the control sequence used to reach the goal in order to reach init again
         PARAMETERS
             none
         RETURNS
-            reversed controls : list of tuple"""
+            reversed controls : list of tuple
+        """
         self.reversed_controls = []
 
         for u1, u2 in reversed(self.path_controls):
@@ -427,8 +452,14 @@ class Graph():
         return self.reversed_controls
 
     def is_goal_reached(self):
+        """
+        Check if the tree reached the goal
+        PARAMETERS
+            none
+        RETURNS 
+            bool
+        """
 
-        # Check if the tree reached the goal
         goal_position, goal_orientation = self.x_goal[:2], self.x_goal[2]
         last_position_x, last_position_y = self.last_position[0], self.last_position[1]
         goal_position_x, goal_position_y = goal_position[0], goal_position[1]
@@ -465,34 +496,79 @@ class Graph():
         return False
     
     def store_controls(self, controls):
-        # Stores the controls
+        """
+        Stores the controls
+        PARAMETERS
+            controls : list
+        RETURNS
+            None
+        """
         self.controls.append(controls)
 
     def draw_initial_node(self, map):
-        # Draws the x_init node on the map
+        """
+        Draws the x_init node on the map
+        PARAMETER
+            map : Environment object
+        RETURN
+            None  
+        """
         pygame.draw.circle(surface=map, color=self.BLUE, center=self.x_init[:2], radius=3)
     
     def draw_goal_node(self, map):
-        # Draw the x_goal node on the map
+        """
+        Draw the x_goal node on the map
+        PARAMETER
+            map : Environment object
+        RETURN
+            None
+        """
         pygame.draw.circle(surface=map, color=self.RED, center=self.x_goal[:2], radius=3)
 
     def draw_random_node(self, map):
-        # Draw the x_rand node on the map
+        """
+        Draw the x_rand node on the map
+        PARAMETER
+            map : Environment object
+        RETURN
+            None
+        """
         pygame.draw.circle(surface=map, color=self.GREEN, center=self.x_rand[:2], radius=3)
 
     def draw_new_node(self, map):
-        # Draw the x_new node on the map\
+        """
+        Draw the x_new node on the map
+        PARAMETER
+            map : Environment object
+        RETURN
+            None
+        """
         for i in range(len(self.x_news)):
             pygame.draw.circle(surface=map, color=self.BROWN, center=self.x_news[i], radius=3)
     
+    #TODO: organize comments 
     def draw_initial_robot_configuration(self, robot_img, environment):
-        # Draw the robot's x_init config 
+        """
+        Draw the robot's x_init config 
+        PARAMETER
+            robot_img : String
+            environment : Environment object
+        RETURN
+            None
+        """
         position = self.x_init[:2]
         orientation = math.degrees(self.x_init[2])
 
         self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
 
     def draw_goal_robot_configuration(self, robot_img, environment):
+        """
+        Draw the robot's x_init config 
+        PARAMETER
+            map : Environment object
+        RETURN
+            None
+        """
         # Draw the robot's x_goal configuration
         position = self.x_goal[:2]
         orientation = math.degrees(self.x_init[2])
