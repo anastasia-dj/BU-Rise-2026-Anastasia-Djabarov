@@ -5,7 +5,11 @@ import RRT
 import math
 import argparse
 import sys
-import os
+
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+
 
 # Command line inputs 
 parser = argparse.ArgumentParser(description='kRRT algorithm for a car-like robot.')
@@ -16,9 +20,9 @@ parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, defau
 parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, default=0.05,
 	help='Fixed time interval')
 parser.add_argument('-init', '--x_init', nargs='+', type=float, metavar='', required=False,
-	default=(50, 50, 0.17), help='Initial node config in X, Y (pixels) and theta (radians)')
+	default=(50, 50, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', required=False,
-	default=(540, 380, -0.17), help='Goal node config in X, Y (pixels) and theta (radians)')
+	default=(540, 380, 0), help='Goal node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-src', '--show_random_configurations', type=bool,
 	action=argparse.BooleanOptionalAction, metavar='', required=False, 
 	help='Show random config on screen')
@@ -42,6 +46,8 @@ parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', req
 parser.add_argument('-stb', '--show_tree_building', type=bool, 
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Shows the simulation forward in time')
+parser.add_argument('-rad', '--search_radius', nargs='+', type=float, metavar='', required=False,
+	default=10, help='The search radius of the robot when deciding which node to rewire.')
 args = parser.parse_args()
 
 # Initialization
@@ -69,6 +75,7 @@ def main():
     tree = [] # Pos in px
     orientation_tree = [] # Orientation in degrees
     parent = []
+    cost = [0.0] # Cost to get to a node from x_init
     values = []
     tree.append(x_init[:2]) # Append init node configuration
     orientation_tree.append(x_init[2]) # Append init node orientation
@@ -113,8 +120,8 @@ def main():
                 random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
                 rand_collision_free = graph.is_free(configuration=random_rect, obstacles=obstacles)
 
-                # Propagate with random control function generally toward goal
             if rand_collision_free:
+                # Propagate with random control function 
                 x_new = graph.new_state(x_rand, robot, event, environment, obstacles)
                 
                 # If the path did not collide with something...
@@ -122,9 +129,12 @@ def main():
                     tree.append(x_new[0]) # Returns a tuple of configuration
                     orientation_tree.append(x_new[1]) # Returns orientation
 
-                    # Update note ID list and parent list with x_new
+                    # Update node ID list and parent list with x_new
                     values.append(node_value)
                     parent = graph.generate_parents(values, parent)
+                    parent_index = parent[-1] # Check which index the parents are on
+                    edge_time = len(graph.x_position[-1]) * args.delta # One sample per args.delta time; multiplication finds total edge time
+                    cost.append(cost[parent_index] + edge_time) # Find cost of the present node by adding the parents 
 
                     # Update node list, number of free collisions and sampled config (K)
                     node_value+=1
@@ -132,17 +142,19 @@ def main():
                     graph.num_free_collision = 0	
                     k += 1
 
-                    # if goal is found
+                    graph.rewire_node(tree=tree, orientation_tree=orientation_tree, parent=parent, cost=cost, 
+                                      search_radius=args.search_radius, delta=args.delta, x_new=x_new)
+                                    
+                # if goal is found
                 if graph.is_goal_found:
                     graph.parent = parent # Attaches growing parent list to graph.parent
                     graph.tree = tree # Attaches growing tree list to graph.tree
                     graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
-                    
                     # Get the list of node IDs of the winning route
                     graph.path_to_goal() 
-
-                    # Get those node IDs and make (x,y) coordinate pairs and recover step-by-step movement data
+                    # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
                     graph.get_path_coordinates()
+                    
 
         # For this to run, both need to be explicitly ENABLED
         if args.show_new_configurations and args.show_tree_building:
@@ -159,7 +171,7 @@ def main():
                 graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
                 environment.draw_trajectory_trail()
                 pygame.display.update()
-                pygame.time.delay(3000)
+                pygame.time.delay(500)
 
             # Display such and such
             if args.path_to_goal:
@@ -168,6 +180,15 @@ def main():
                 graph.draw_trajectory(robot=robot, environment=environment)
             if args.show_interpolation:
                 graph.draw_interpolation(robot=robot, environment=environment)
+            
+            pygame.quit()
+            graph.show_3d_map(init_point=args.x_init, goal_point=args.x_goal)
+
+
+            # NOTE: Reversibility test. Drive back from goal to init. NOT WORKING.
+            # graph.get_path_controls()
+            # graph.reverse_path()
+            # graph.draw_reverse_trajectory(robot=robot, environment=environment)
             
 
         if rand_collision_free and args.show_random_configurations and args.show_tree_building:
@@ -181,7 +202,6 @@ def main():
             pygame.display.update()
             environment.map.fill(environment.WHITE)
 
-    pygame.quit()
     sys.exit()
 
 if __name__ == '__main__':

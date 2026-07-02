@@ -7,10 +7,13 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 class Graph():
-    # Class for RRT
-    # start : tuple (init x, y, theta)
-    # goal : tuple (final x, y, theta)
-    # map_dimensions : tuple (width and height)
+    """
+    Class for RRT
+
+    start : tuple (init x, y, theta)
+    goal : tuple (final x, y, theta)
+    map_dimensions : tuple (width and height)
+    """
 
     def __init__(self, start, goal, map_dimensions):
         self.x_init = start
@@ -45,15 +48,15 @@ class Graph():
         self.theta_orientation = []
 
         # Holds path coordinates for later animation (i.e. in draw_interpolation() and draw_trajectory())
-        self.x_interpolation = []
-        self.y_interpolation = []
-        self.theta_interpolation = []
+        self.x_final_path = []
+        self.y_final_path = []
+        self.theta_final_path = []
 
         self.interpolation_factor = 10
 
-        self.x_interpolation.append(self.x_init[0])
-        self.y_interpolation.append(self.x_init[1])
-        self.theta_interpolation.append(self.x_init[2])
+        self.x_final_path.append(self.x_init[0])
+        self.y_final_path.append(self.x_init[1])
+        self.theta_final_path.append(self.x_init[2])
 
         # Store added states (i.e. multiple x_new)
         self.x_news = []
@@ -166,8 +169,8 @@ class Graph():
             time = robot.dt
 
             # TODO: Change these numbers (Sampled?)
-            self.u1 = random.uniform(-0.4, 0.4)
-            self.u2 = random.uniform(-0.5, 0.5)
+            self.u1 = random.uniform(-0.4, 0.4) # Linear velocity
+            self.u2 = random.uniform(-0.5, 0.5) # Angular velocity
             self.u = [self.u1, self.u2]
 
             # Check collisions
@@ -265,6 +268,75 @@ class Graph():
             parent.insert(parent_index+1, values[-1]+1)
 
         return parent
+    
+    def rewire_node(self, tree, orientation_tree, parent, cost, search_radius, delta, x_new):
+        """
+        Within a search radius, it finds the position (not strictly a node) with the lowest cost and rewires the node.
+        PARAMETERS
+            tree : tree
+            parent : list
+            orientation_tree : list
+            cost : float
+            search_radius : float (take in arg)
+            delta : float (take in arg)
+            x_new : list with tuple for (x,y)
+        RETURNS
+            None
+        """
+        # Check costs
+        best_cost = cost[-1]
+        best_point = None
+
+        for i in range(len(self.x_position)):
+            node_index = i+1 # Consider that [0] = x_init, so edge i created node i+1 
+            if node_index == len(tree)-1: # Do not consider the new node as a parent to itself
+                continue
+            for j in range(len(self.x_position[i])): # Check each individual sample
+                x_candidate = [self.x_position[i][j], self.y_position[i][j]]
+                new_x, new_y = x_new[0] # Unpack the tuple
+                distance = math.hypot(x_candidate[0] - new_x, x_candidate[1] - new_y)
+                if distance <= search_radius:
+                    cost_to_candidate = cost[parent[node_index]] + (j+1)*delta # Cost to reach the candidate from the root
+                    candidate_cost = cost_to_candidate + distance
+                    if candidate_cost < best_cost:
+                        best_cost = candidate_cost
+                        best_point = (i,j)
+        
+            if best_point is not None: # A better route was found
+                edge_index, point_index = best_point
+                last_point_index = len(self.x_position[edge_index])-1
+                
+                if last_point_index == point_index: # Check if candidate is already a node
+                    node_index = edge_index+1
+                    parent[-1] = node_index
+                    cost[-1] = best_cost
+                else: # Candidate is not a node (Consider: Node A is being rewired, Node B is being promoted, Node C is Node B's parent)
+                    # Save Node A's index first
+                    original_new_node_index = len(tree)-1
+                    print(f"len(tree)={len(tree)}, len(parent)={len(parent)}, original_new_node_index={original_new_node_index}")
+
+                    # Pull out Node B's data
+                    point_x = self.x_position[edge_index][point_index]
+                    point_y = self.y_position[edge_index][point_index]
+                    point_theta = self.theta_orientation[edge_index][point_index]
+
+                    # Find the parent of the edge Node B is on (Node C)
+                    edge_start_index = parent[edge_index+1] 
+
+                    # Create Node B 
+                    tree.append((point_x, point_y)) 
+                    orientation_tree.append(point_theta)
+                    parent.append(edge_start_index)
+                    cost.append(cost[edge_start_index] + (point_index+1) * delta) # Append the cost  of B to the list
+
+                    # Find Node B's index
+                    new_node_index = len(tree)-1
+
+                    # Rewire Node A to point to Node B
+                    parent[original_new_node_index] = new_node_index
+                    cost[original_new_node_index] = best_cost
+
+                    print(f"Rewired node {original_new_node_index} to parent {parent[original_new_node_index]}, cost {best_cost:.3f}")
 
     def store_configuration(self, position, orientation):
         """Stores the current robot configuration to an ongoing list for later use
@@ -313,37 +385,12 @@ class Graph():
                 x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
                 y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
                 if x_match and y_match:
-                    self.x_interpolation.append(self.x_position[i])
-                    self.y_interpolation.append(self.y_position[i])
-                    self.theta_interpolation.append(self.theta_orientation[i])
+                    self.x_final_path.append(self.x_position[i])
+                    self.y_final_path.append(self.y_position[i])
+                    self.theta_final_path.append(self.theta_orientation[i])
 
         return self.path_coordinates
     
-    def get_path_and_theta_coordinates(self):
-        """Collects correspondant coordinates and theta
-        PARAMETERS
-            None
-        RETURNS
-            Coordinates (and theta) for successful path"""
-
-        self.path_coordinates = []
-
-        for node in self.path:
-            x, y = self.tree[node]
-            self.path_coordinates.append((x,y))
-        
-        for i in range(len(self.x_position)):
-            for j in range(len(self.path_coordinates)):
-                x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
-                y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
-                if x_match and y_match:
-                    self.x_interpolation.append(self.x_position[i])
-                    self.y_interpolation.append(self.y_position[i])
-                    self.theta_interpolation.append(self.theta_orientation[i])
-
-        return self.path_coordinates
-    
-
     # TODO: Outdated
     def get_path_controls(self):
         """Extracts u1 and u2 from a path (organized init->goal) and returns.
@@ -359,7 +406,7 @@ class Graph():
                 x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
                 y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
                 if x_match and y_match:
-                    num_ticks = len(self.x_position[i])
+                    # num_ticks = len(self.x_position[i])
                     self.path_controls.append((self.controls[i][0], self.controls[i][1]))
 
         return self.path_controls
@@ -476,9 +523,9 @@ class Graph():
 
     def draw_interpolation(self, robot, environment):
         # Shows the robot driving from starting pos to goal
-        x_interpolation = self.x_interpolation[1:] # x interpolation holds path coordinates
-        y_interpolation = self.y_interpolation[1:]
-        theta_interpolation = self.theta_interpolation[1:]
+        x_interpolation = self.x_final_path[1:] # x interpolation holds path coordinates
+        y_interpolation = self.y_final_path[1:]
+        theta_interpolation = self.theta_final_path[1:]
 
         for x,y,theta in zip(x_interpolation, y_interpolation, theta_interpolation):
             for interpolation, (i,j,k) in enumerate(zip(x,y,theta)):
@@ -499,9 +546,9 @@ class Graph():
 
     def draw_trajectory(self, robot, environment):
         # Draw the interpolation from the init config to the goal config
-        x_interpolation = self.x_interpolation[1:]
-        y_interpolation = self.y_interpolation[1:]
-        theta_interpolation = self.theta_interpolation[1:]
+        x_interpolation = self.x_final_path[1:]
+        y_interpolation = self.y_final_path[1:]
+        theta_interpolation = self.theta_final_path[1:]
 
         for x,y,theta in zip(x_interpolation, y_interpolation, theta_interpolation):
             for interpolation, (i,j,k) in enumerate(zip(x,y,theta)):
@@ -592,7 +639,6 @@ class Graph():
 
         return rect
 
-
     def show_3d_map(self, init_point, goal_point):
         """Initialize figure in the 3D axis
             PARAMETERS
@@ -605,8 +651,8 @@ class Graph():
         ax = fig.add_subplot(projection='3d')
 
         # Graph points
-        for i in range(len(self.x_interpolation)):
-            ax.scatter(self.x_interpolation[i], self.y_interpolation[i], self.theta_interpolation[i], color='brown', s=5)
+        for i in range(len(self.x_final_path)):
+            ax.scatter(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', s=5)
         
         # Initial point
         ax.scatter(init_point[0], init_point[1], init_point[2], color='red', s=20)

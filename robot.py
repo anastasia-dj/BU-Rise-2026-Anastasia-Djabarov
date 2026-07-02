@@ -3,11 +3,11 @@ import math
 
 class Robot():
     """
-    The robot; such like drawing, translation, position, orientation.
+    The robot drawing, translation, position, orientation.
 
     start : tuple (x, y, theta)
     robot_img : str (list of paths for robot imgs - init, goal, robot)
-    length : float (lenth b/w rear and front wheels)
+    length : float (length b/w rear and front wheels)
     
     """
 
@@ -50,6 +50,7 @@ class Robot():
         self.u1, self.u2 = u #u1 linear, u2 angular
 
         # Car kinematic model
+        # TODO: Ask Professor Tron about self.x/y/theta overestimation
         self.x += self.u1 * math.cos(math.radians(self.theta)) * self.dt # delta X
         self.y -= self.u1 * math.sin(math.radians(self.theta)) * self.dt # delta Y
         self.theta += self.u2 * self.dt

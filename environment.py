@@ -31,7 +31,7 @@ class Environment():
 
         # Window settings
         self.FPS = 120
-        pygame.display.set_caption("Kinodynamic RRT Car Example")
+        pygame.display.set_caption("Kinodynamic RRT Car")
 
         if show_tree_building:
             self.show_screen()
