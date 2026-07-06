@@ -29,6 +29,7 @@ parser.add_argument('-src', '--show_random_configurations', type=bool,
 parser.add_argument('-snc', '--show_new_configurations', type=bool,
  	action=argparse.BooleanOptionalAction, metavar='', required=False,
  	help='Show new config on screen')
+#TODO: Delete the bias when the "goal" position is deleted, so the tree expands in all directions equally.
 parser.add_argument('-bp', '--bias_percentage', type=int, metavar='', required=False, default=50,
 	help='Amount of bias the RRT from 1-100')
 parser.add_argument('-ptg', '--path_to_goal', type=bool, action=argparse.BooleanOptionalAction, 
@@ -148,6 +149,7 @@ def main():
                                     
                 # if goal is found
                 if graph.is_goal_found:
+                    print(f"Goal is found!")
                     graph.parent = parent # Attaches growing parent list to graph.parent
                     graph.tree = tree # Attaches growing tree list to graph.tree
                     graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
@@ -184,13 +186,6 @@ def main():
             
             pygame.quit()
             graph.show_3d_map(init_point=args.x_init, goal_point=args.x_goal)
-
-
-            # NOTE: Reversibility test. Drive back from goal to init. NOT WORKING.
-            # graph.get_path_controls()
-            # graph.reverse_path()
-            # graph.draw_reverse_trajectory(robot=robot, environment=environment)
-            
 
         if rand_collision_free and args.show_random_configurations and args.show_tree_building:
             random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
