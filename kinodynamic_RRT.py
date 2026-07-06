@@ -18,7 +18,7 @@ parser.add_argument('-o', '--obstacles', type=bool, action=argparse.BooleanOptio
 parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, default=5000,
 	help='Max number of nodes')
 parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, default=0.05,
-	help='Fixed time interval')
+	help='Fixed steps between frames for the visualization')
 parser.add_argument('-init', '--x_init', nargs='+', type=float, metavar='', required=False,
 	default=(50, 50, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', required=False,
@@ -88,6 +88,7 @@ def main():
     graph.position_boundary = args.position_boundary
     graph.orientation_boundary = args.orientation_boundary
     graph.show_tree_building = args.show_tree_building
+    graph.delta = args.delta 
     environment.make_obstacles()
 
     if not args.show_tree_building:
@@ -96,7 +97,7 @@ def main():
     while run and k < args.nodes:
         # Set loop run to 60 FPS
         clock.tick(environment.FPS)
-        print(f"top of while loop, is_fwd_finished={graph.is_forward_simulation_finished}, dt={robot.dt}")
+        print(f"top of while loop, is_fwd_finished={graph.is_forward_simulation_finished}")
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -133,7 +134,7 @@ def main():
                     values.append(node_value)
                     parent = graph.generate_parents(values, parent)
                     parent_index = parent[-1] # Check which index the parents are on
-                    edge_time = len(graph.x_position[-1]) * args.delta # One sample per args.delta time; multiplication finds total edge time
+                    edge_time = graph.edge_time_duration 
                     cost.append(cost[parent_index] + edge_time) # Find cost of the present node by adding the parents 
 
                     # Update node list, number of free collisions and sampled config (K)
@@ -196,7 +197,6 @@ def main():
             graph.draw_random_node(map=environment.map)
 
         iteration +=1
-        robot.dt += args.delta 
 
         if not graph.is_goal_found:
             pygame.display.update()

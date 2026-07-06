@@ -32,10 +32,7 @@ class Graph():
         self.robot_last_orientation.append(math.degrees(self.x_init[2]))
         
         self.last_position = self.x_init[:2] # Single value holding most recent position
-        self.last_orientation = self.x_init[2] #TODO: Change to degrees
-        self.u1 = random.uniform(-0.4, 0.4) #TODO: Bring kinematic to dynamic here
-        self.u2 = random.uniform(-0.5, 0.5)
-        self.u = [self.u1, self.u2]
+        self.last_orientation = self.x_init[2] 
 
         # Stored list of positions and orientations
         self.x_positions = []
@@ -51,6 +48,7 @@ class Graph():
         self.x_final_path = []
         self.y_final_path = []
         self.theta_final_path = []
+        self.playback_queue = []
 
         self.interpolation_factor = 10
 
@@ -159,66 +157,56 @@ class Graph():
             list : Collection of positions the robot has passed through
         """
 
-        time = robot.dt
-        self.is_forward_simulation_finished = False
+        # Changes: This function used to be called once per frame to add a step under a Euler assumption.
+        # Given the simplicity of the system and its geometry, a closed form assumption can be used instead.
+        # The new version of simulate() runs once per edge.
 
-        if time <= self.max_simulation_time:
-            # Draw map/robot/trail is max sim time is not reached & show_tree_building
-            if self.show_tree_building:
-                robot.draw(map=environment.map) # Draw robot at each fwd in time simulation
-            robot.move(event=event, u=self.u)
-            environment.trail(position=(robot.x, robot.y), draw_trail=self.show_tree_building)
-            self.x_positions.append(robot.x)
-            self.y_positions.append(robot.y)
-            self.theta_orientations.append(robot.theta)
-        else: 
-            # Simulation time restarted
-            self.is_forward_simulation_finished = True
-            self.max_simulation_time = 4
-            robot.dt = 0
-            time = robot.dt
+        x_init, y_init = self.last_position
+        theta_init = math.radians(self.last_orientation)
 
-            # TODO: Change these numbers (Sampled?)
-            self.u1 = random.uniform(-0.4, 0.4) # Linear velocity
-            self.u2 = random.uniform(-0.5, 0.5) # Angular velocity
-            self.u = [self.u1, self.u2]
+        self.v = 1; # Linear velocity
+        self.w = random.uniform(-0.5, 0.5) # Angular velocity
+        self.edge_time_duration = random.uniform(0.5, 4)
+        self.controls_vw = [self.v, self.w] 
+        
+        # Check if collision free
+        x_final, y_final, theta_final = robot.closed_form_step(x_init, y_init, theta_init, self.v, self.w, self.edge_time_duration)
+        theta_final_deg = math.degrees(theta_final) # pygame wants degrees within update_visual
+        robot.update_visual(x_final, y_final, theta_final_deg)
+        collision_free = self.is_free(configuration=robot.rect, obstacles=obstacles)
 
-            # Check collisions
-            collision_free = self.is_free(configuration=robot.rect, obstacles=obstacles)
+        if not collision_free:
+            # Put the robot's visual back to where it still is and drop the path
+            robot.update_visual(self.last_position[0], self.last_position[1], self.last_orientation)
+            return None
+        
+        # Now that the path is confirmed to be free, build the full trajectory
+        xs_sample, ys_sample, thetas_rad = robot.generate_arc_samples(x_init, y_init, theta_init, self.v, self.w, self.edge_time_duration, self.delta)
+        thetas_deg = []
+        for t in thetas_rad:
+            degrees_theta_value = math.degrees(t)
+            thetas_deg.append(degrees_theta_value)
+        
+        # Store the edge's last configuration and controls
+        self.store_configuration(position=(robot.x, robot.y), orientation=robot.theta)
+        self.store_controls(controls=self.controls_vw)
+        
+        # Store the edge's trajectory
+        self.x_positions.append(xs_sample)
+        self.y_positions.append(ys_sample)
+        self.theta_orientations.append(thetas_deg)
 
-            if collision_free:
-                # Store the last trails of the robot, empty piecewise trail list
-                environment.store_trails()
-                environment.empty_trails()
+        # Play the edge's motion back if requested
+        if self.show_tree_building:
+            for x, y, theta in zip(xs_sample, ys_sample, thetas_deg):
+                robot.update_visual(x, y, theta)
+                environment.trail(position=(x,y), draw_trail=True)
+                robot.draw(map=environment.map)
+                pygame.display.update()
 
-                # Store the last config of the robot
-                self.store_configuration(position=(robot.x, robot.y), orientation=robot.theta)
-                self.store_controls(controls=self.u)
 
-                # Store the list of positions
-                self.x_position.append(self.x_positions)
-                self.y_position.append(self.y_positions)
-                self.theta_orientation.append(self.theta_orientations)
-
-                # Reset the list of positions
-                self.x_positions = []
-                self.y_positions = []
-                self.theta_orientations = []
-
-                return self.robot_last_position
-            else:
-                # Empty the trail list
-                environment.empty_trails()
-
-                self.x_positions = []
-                self.y_positions = []
-                self.theta_orientations = []
-
-                # Rollback robot position and orientation
-                robot.x, robot.y = self.last_position[:2]
-                robot.theta = self.last_orientation
-
-                return None
+        # TODO: Check
+        return self.robot_last_position
             
     def new_state(self, x_rand, robot, event, environment, obstacles=None):
         """
@@ -412,44 +400,44 @@ class Graph():
 
         return self.path_coordinates
     
-    # TODO: Outdated
-    def get_path_controls(self):
-        """
-        Extracts u1 and u2 from a path (organized init->goal) and returns.
-        Note: Must be called AFTER path_to_goal and get_path_coordinates
-        PARAMETERS
-            none
-        RETURNS
-            Controls for successful path : list
-        """
+    # # TODO: Outdated
+    # def get_path_controls(self):
+    #     """
+    #     Extracts u1 and u2 from a path (organized init->goal) and returns.
+    #     Note: Must be called AFTER path_to_goal and get_path_coordinates
+    #     PARAMETERS
+    #         none
+    #     RETURNS
+    #         Controls for successful path : list
+    #     """
 
-        self.path_controls = []
-        for i in range(len(self.x_position)):
-            for j in range(len(self.path_coordinates)):
-                x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
-                y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
-                if x_match and y_match:
-                    # num_ticks = len(self.x_position[i])
-                    self.path_controls.append((self.controls[i][0], self.controls[i][1]))
+    #     self.path_controls = []
+    #     for i in range(len(self.x_position)):
+    #         for j in range(len(self.path_coordinates)):
+    #             x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
+    #             y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
+    #             if x_match and y_match:
+    #                 # num_ticks = len(self.x_position[i])
+    #                 self.path_controls.append((self.controls[i][0], self.controls[i][1]))
 
-        return self.path_controls
+    #     return self.path_controls
 
 
-    # TODO: Outdated 
-    def reverse_path(self):
-        """
-        Reverse the control sequence used to reach the goal in order to reach init again
-        PARAMETERS
-            none
-        RETURNS
-            reversed controls : list of tuple
-        """
-        self.reversed_controls = []
+    # # TODO: Outdated 
+    # def reverse_path(self):
+    #     """
+    #     Reverse the control sequence used to reach the goal in order to reach init again
+    #     PARAMETERS
+    #         none
+    #     RETURNS
+    #         reversed controls : list of tuple
+    #     """
+    #     self.reversed_controls = []
 
-        for u1, u2 in reversed(self.path_controls):
-            self.reversed_controls.append((-u1,-u2))
+    #     for u1, u2 in reversed(self.path_controls):
+    #         self.reversed_controls.append((-u1,-u2))
         
-        return self.reversed_controls
+    #     return self.reversed_controls
 
     def is_goal_reached(self):
         """
@@ -640,72 +628,71 @@ class Graph():
                 pygame.time.delay(3)
                 environment.map.fill(self.WHITE)
     
-    # NOT WORKING
-    def draw_reverse_trajectory(self, robot, environment):
-        """Drives the robot backward from x_goal to x_init through control inputs
-        PARAMETERS
-            robot : Robot
-            environment : Environment
-        RETURNS
-            None"""
+    # # TODO: Not working (Probably delete later)
+    # def draw_reverse_trajectory(self, robot, environment):
+    #     """Drives the robot backward from x_goal to x_init through control inputs
+    #     PARAMETERS
+    #         robot : Robot
+    #         environment : Environment
+    #     RETURNS
+    #         None"""
         
-        robot.x, robot.y = self.x_goal[:2] # Reset starting configuration
-        robot.theta = math.degrees(self.x_goal[2]) # Reset starting orientation
+    #     robot.x, robot.y = self.x_goal[:2] # Reset starting configuration
+    #     robot.theta = math.degrees(self.x_goal[2]) # Reset starting orientation
 
-        for u1, u2 in self.reversed_controls:
-            robot.dt = 0 # Reset the clock
+    #     for u1, u2 in self.reversed_controls:
+    #         robot.dt = 0 # Reset the clock
 
-            while robot.dt <= self.max_simulation_time:
-                # Undo theta FIRST 
-                robot.theta += (-u2) * robot.dt
+    #         while robot.dt <= self.max_simulation_time:
+    #             # Undo theta FIRST 
+    #             robot.theta += (-u2) * robot.dt
 
-                # THEN undo x and y using theta
-                robot.x += u1 * math.cos(math.radians(robot.theta)) * robot.dt
-                robot.y -= u1 * math.sin(math.radians(robot.theta)) * robot.dt
+    #             # THEN undo x and y using theta
+    #             robot.x += u1 * math.cos(math.radians(robot.theta)) * robot.dt
+    #             robot.y -= u1 * math.sin(math.radians(robot.theta)) * robot.dt
                 
-                # Redo translation and rotation animation (Since move() is not referenced)
-                robot.rotated = pygame.transform.rotozoom(surface=robot.img, angle=robot.theta, scale=1);
-                robot.rect = robot.rotated.get_rect(center=(robot.x, robot.y)) # Update bounding rectangle
+    #             # Redo translation and rotation animation (Since move() is not referenced)
+    #             robot.rotated = pygame.transform.rotozoom(surface=robot.img, angle=robot.theta, scale=1);
+    #             robot.rect = robot.rotated.get_rect(center=(robot.x, robot.y)) # Update bounding rectangle
 
-                if self.obstacles != []:
-                    environment.draw.obstacles()
+    #             if self.obstacles != []:
+    #                 environment.draw.obstacles()
                 
-                self.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                self.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-                robot.draw(map=environment.map)
+    #             self.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+    #             self.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+    #             robot.draw(map=environment.map)
 
-                pygame.display.update()
-                pygame.time.delay(3)
-                environment.map.fill(self.WHITE)
-                robot.dt+= 0.05 # TODO
+    #             pygame.display.update()
+    #             pygame.time.delay(3)
+    #             environment.map.fill(self.WHITE)
+    #             robot.dt+= 0.05 # TODO
 
-        print('Retraced end position:', robot.x, robot.y, robot.theta)
-        print('Actual init pos:', self.x_init)
+    #     print('Retraced end position:', robot.x, robot.y, robot.theta)
+    #     print('Actual init pos:', self.x_init)
 
 
-        """time = robot.dt
-        self.is_forward_simulation_finished = False
+    #     """time = robot.dt
+    #     self.is_forward_simulation_finished = False
 
-        if time <= self.max_simulation_time:
-            # Draw map/robot/trail is max sim time is not reached & show_tree_building
-            if self.show_tree_building:
-                robot.draw(map=environment.map) # Draw robot at each fwd in time simulation
-            robot.move(event=event, u=self.u)
-            environment.trail(position=(robot.x, robot.y), draw_trail=self.show_tree_building)
-            self.x_positions.append(robot.x)
-            self.y_positions.append(robot.y)
-            self.theta_orientations.append(robot.theta)
-        else: 
-            # Simulation time restarted
-            self.is_forward_simulation_finished = True
-            self.max_simulation_time = 4
-            robot.dt = 0
-            time = robot.dt
+    #     if time <= self.max_simulation_time:
+    #         # Draw map/robot/trail is max sim time is not reached & show_tree_building
+    #         if self.show_tree_building:
+    #             robot.draw(map=environment.map) # Draw robot at each fwd in time simulation
+    #         robot.move(event=event, u=self.u)
+    #         environment.trail(position=(robot.x, robot.y), draw_trail=self.show_tree_building)
+    #         self.x_positions.append(robot.x)
+    #         self.y_positions.append(robot.y)
+    #         self.theta_orientations.append(robot.theta)
+    #     else: 
+    #         # Simulation time restarted
+    #         self.is_forward_simulation_finished = True
+    #         self.max_simulation_time = 4
+    #         robot.dt = 0
+    #         time = robot.dt
 
-            # TODO: Change these numbers (Sampled?)
-            self.u1 = random.uniform(-0.4, 0.4)
-            self.u2 = random.uniform(-0.5, 0.5)
-            self.u = [self.u1, self.u2]"""
+    #         self.u1 = random.uniform(-0.4, 0.4)
+    #         self.u2 = random.uniform(-0.5, 0.5)
+    #         self.u = [self.u1, self.u2]"""
 
     def draw_robot_configuration(self, image, position, orientation, environment):
         # Create the translation & rotation animation
