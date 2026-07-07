@@ -18,10 +18,11 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
 - **RRT.py** - Graph class: tree bookkeeping, sampling, simulate() (which checks one full edge per call), rewire_node() (rewires a node depending on positions in close proximity), path extraction, 3D matplotlib plot
 - **kinodynamic_RRT.py** - main script: parse command line args, then runs the main loop: sampling -> simulate() -> tree bookkeeping -> rewire_node() -> check goal
 
-## High-Level Pseudocode
+## Pseudocode
     tree = [x_init];
     parent = [0]; # The root's parent index is itself
     cost = [0];
+    history = [x_init]; # Every point ever simulated
 
     while not goal_found and num_nodes < max_nodes:
         x_rand = sample_random_configuration()
@@ -69,8 +70,8 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
 
 ## Current Design Decisions
 The three core design decisions (so far) were suggested by Professor Tron and adopted for this implementation:
-- **v fixed, w and t randomized per edge** - makes cost calculation easier (cost = v*t = t) and guarantees each edge is a circular arc with a known closed-form solution
-- **Theta as a third axis** - the 3-dimensional configuration space shows tree structure that a 2D top-down view hides
+- **v fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t = t) and guarantees each edge is a circular arc with a known closed-form solution
+- **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
 - **Rewiring by searching through simulated arc points and tree nodes** - Every candidate point being searched is a real previously-simulated position rather than an arbitrary coordinate. However, the final connection from that candidate to the node being rewired is currently still being approximated by straight-line distance (not a verified arc) - see Known Issue #3
 
 ## Known Issues
