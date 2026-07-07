@@ -82,7 +82,7 @@ class Robot():
         r = v/w
         theta_fin = theta_init + w*t # Calculate new theta
         x_fin = x_init + r * (math.sin(theta_fin) - math.sin(theta_init))
-        y_fin = y_init + r * (math.cos(theta_fin) - math.cos(theta_init))
+        y_fin = y_init - r * (math.cos(theta_fin) - math.cos(theta_init))
         return x_fin, y_fin, theta_fin
 
     
