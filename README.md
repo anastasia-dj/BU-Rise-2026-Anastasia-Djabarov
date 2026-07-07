@@ -13,10 +13,10 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
 3. Visualize the tree in 3D space with theta as the z axis. 
 
 ## File Organization
-- **robot.py** - Robot class: simulated physical model, kinematics (closed_form_step), arc sampling, drawing/rotation.
-- **environment.py** - Environment class: map, obstacles, trail drawing
-- **RRT.py** - Graph class: tree bookkeeping, sampling, simulate() (which checks one full edge per call), rewire_node() (rewires a node depending on positions in close proximity), path extraction, 3D matplotlib plot
-- **kinodynamic_RRT.py** - main script: parse command line args, then runs the main loop: sampling -> simulate() -> tree bookkeeping -> rewire_node() -> check goal
+- **robot.py** - Robot class: kinematics (`closed_form_step`, `generate_arc_samples`), drawing and rotation.
+- **environment.py** - Environment class: map setup, obstacles, and trail drawing.
+- **RRT.py** - Graph class: tree recording, sampling, `simulate()` (simulates one full edge per call), `rewire_node()` (rewires nodes within a search radius), path extraction, and 3D matplotlib plotting.
+- **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check).
 
 ## Pseudocode
     tree = [x_init];
