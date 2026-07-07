@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+from node import Node
+
 
 class Graph():
     """
@@ -187,11 +189,6 @@ class Graph():
         # Store the edge's last controls
         self.store_controls(controls=self.controls_vw)
 
-        # Store the edge's trajectory
-        self.x_position.append(xs_sample)
-        self.y_position.append(ys_sample)
-        self.theta_orientation.append(thetas_deg)
-
         # Play the edge's motion back if requested
         if self.show_tree_building:
             for x, y, theta in zip(xs_sample, ys_sample, thetas_deg):
@@ -209,9 +206,9 @@ class Graph():
             environment.store_trails()
             environment.empty_trails()
 
-        return (x_final, y_final), theta_final_deg
-            
-    def new_state(self, random_parent_index, robot, event, environment, tree, orientation_tree, obstacles=None):
+        return (x_final, y_final), theta_final_deg, (xs_sample, ys_sample, thetas_deg)
+
+    def new_state(self, random_parent_index, robot, environment, nodes, obstacles=None):
         """
         Given a random node, propagates forward with a random control input (Constant v=1, randomized w and t)
         PARAMETERS
@@ -226,8 +223,8 @@ class Graph():
             obstacles = [] 
         self.obstacles = obstacles
 
-        self.last_position = tree[random_parent_index][:2]
-        self.last_orientation = orientation_tree[random_parent_index]
+        self.last_position = nodes[random_parent_index].position
+        self.last_orientation = nodes[random_parent_index].orientation
 
         # Simulation fwd in time
         simulation = self.simulate(robot=robot, environment=environment, obstacles=obstacles, random_parent_index=random_parent_index) # Returns x_final, y_final, theta_final_deg
@@ -235,25 +232,18 @@ class Graph():
         if simulation is not None:
             self.iteration += 1 # One tree iteration is done
 
-            # Save new configurations
-            self.x_new, self.theta_new = simulation
+            # Save new configurations and trajectory sample
+            self.x_new, self.theta_new, trajectory_samples = simulation
             
             # Append new configs to a list
             self.x_news.append(self.x_new)
             self.theta_news.append(self.theta_new)
 
             if self.is_goal_reached(self.x_new, self.theta_new):
-                self.goal_configuration = self.number_of_nodes-1
+                self.goal_configuration = self.number_of_nodes
                 self.is_goal_found = True
-            
-            # Store the configs as latest configs
-            # Can possibly delete last_position and last_orientation
-            self.last_position = self.x_new
-            self.last_orientation = self.theta_new
-            robot.x, robot.y = self.last_position[:2]
-            robot.theta = self.last_orientation
 
-            return self.x_new, self.theta_new
+            return self.x_new, self.theta_new, trajectory_samples
         
     # TODO: Delete
     # def generate_parents(self, values, parent):
@@ -276,7 +266,7 @@ class Graph():
 
     #     return parent
     
-    def rewire_node(self, tree, orientation_tree, parent, cost, search_radius, delta, x_new):
+    def rewire_node(self, nodes, search_radius, delta):
         """
         Within a search radius, it finds the position (not strictly a node) with the lowest cost and rewires the node.
         PARAMETERS
@@ -290,60 +280,66 @@ class Graph():
         RETURNS
             None
         """
-        # Check costs
-        best_cost = cost[-1]
+        new_node_index = len(nodes)-1
+        new_node = nodes[new_node_index]
+        best_cost = new_node.cost
         best_point = None
 
-        for i in range(len(self.x_position)):
-            node_index = i+1 # Consider that [0] = x_init, so edge i created node i+1 
-            if node_index == len(tree)-1: # Do not consider the new node as a parent to itself
-                continue
-            for j in range(len(self.x_position[i])): # Check each individual sample
-                x_candidate = [self.x_position[i][j], self.y_position[i][j]]
-                new_x, new_y = x_new[0] # Unpack the tuple
-                distance = math.hypot(x_candidate[0] - new_x, x_candidate[1] - new_y)
+        for i in range(len(nodes)):
+            if i == new_node_index: 
+                continue # Do not consider the new node as a parent to itself
+            candidate_node = nodes[i]
+            if candidate_node.trajectory_samples is None:
+                continue # Root has no trajectory to search
+            xs, ys, thetas = candidate_node.trajectory_samples
+            for j in range(len(xs)): # Check each individual sample
+                distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
                 if distance <= search_radius:
-                    cost_to_candidate = cost[parent[node_index]] + (j+1)*delta*self.v # Cost to reach the candidate from the root, NOTE: With v
+                    cost_to_candidate = nodes[candidate_node.parent].cost + (j+1)*delta*self.v # Cost to reach the candidate from the root
                     candidate_cost = cost_to_candidate + distance
                     if candidate_cost < best_cost:
                         best_cost = candidate_cost
                         best_point = (i,j)
         
-        if best_point is not None: # A better route was found
-            edge_index, point_index = best_point
-            last_point_index = len(self.x_position[edge_index])-1
-            
-            if last_point_index == point_index: # Check if candidate is already a node
-                node_index = edge_index+1
-                parent[-1] = node_index
-                cost[-1] = best_cost
-            else: # Candidate is not a node (Consider: Node A is being rewired, Node B is being promoted, Node C is Node B's parent)
-                # Save Node A's index first
-                original_new_node_index = len(tree)-1
-                print(f"len(tree)={len(tree)}, len(parent)={len(parent)}, original_new_node_index={original_new_node_index}")
+        if best_point is None: # A better route was NOT found
+            return 
+        
+        # Record old parent and old cost before reassignment (DEBUGGING)
+        old_parent = new_node.parent
+        old_cost = new_node.cost
 
-                # Pull out Node B's data
-                point_x = self.x_position[edge_index][point_index]
-                point_y = self.y_position[edge_index][point_index]
-                point_theta = self.theta_orientation[edge_index][point_index]
+        edge_index, point_index = best_point
+        edge_node = nodes[edge_index]
+        xs, ys, thetas = edge_node.trajectory_samples
+        last_point_index = len(xs)-1
+        
+        if point_index == last_point_index: # Check if candidate is already a node
+            new_node.parent = edge_index
+            new_node.cost = best_cost
+        else: 
+            # Candidate is mid-edge. Split edge_node's edge, promoting a new node M
+            point_x, point_y, point_theta = xs[point_index], ys[point_index], thetas[point_index]
 
-                # Find the parent of the edge Node B is on (Node C)
-                edge_start_index = parent[edge_index+1] 
+            M = Node(
+                position=(point_x, point_y),
+                orientation=point_theta,
+                parent=edge_node.parent,
+                cost=nodes[edge_node.parent].cost + (point_index+1)*delta*self.v,
+                trajectory_samples=(xs[:point_index+1], ys[:point_index+1], thetas[:point_index+1])
+            )
+            nodes.append(M)
+            m_index = len(nodes)-1
 
-                # Create Node B 
-                tree.append((point_x, point_y)) 
-                orientation_tree.append(point_theta)
-                parent.append(edge_start_index)
-                cost.append(cost[edge_start_index] + (point_index+1) * delta) # Append the cost  of B to the list
+            # edge_node now starts from M instead of its old parent (edge splitting here)
+            edge_node.parent = m_index
+            edge_node.trajectory_samples = (xs[point_index+1:], ys[point_index+1:], thetas[point_index+1:])
+            edge_node.cost = M.cost + len(edge_node.trajectory_samples[0])*delta*self.v
 
-                # Find Node B's index
-                new_node_index = len(tree)-1
-
-                # Rewire Node A to point to Node B
-                parent[original_new_node_index] = new_node_index
-                cost[original_new_node_index] = best_cost
-
-                print(f"Rewired node {original_new_node_index} to parent {parent[original_new_node_index]}, cost {best_cost:.3f}")
+            # Rewire new_node to promoted M
+            new_node.parent = m_index
+            new_node.cost = best_cost
+        
+        print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
     def store_configuration(self, position, orientation):
         """
@@ -366,15 +362,12 @@ class Graph():
             none
         In other words, it finds the path from x_init to x_goal.
         """
-        self.path = []
-        self.path.append(self.goal_configuration)
-        new_configuration = self.parent[self.goal_configuration]
-
-        while new_configuration != 0:
+        self.path = [self.goal_configuration]
+        current_parent = self.nodes[self.goal_configuration].parent
+        while current_parent != 0:
             # Append the parent of parent and update config
-            self.path.append(new_configuration)
-            new_configuration = self.parent[new_configuration]
-
+            self.path.append(current_parent)
+            current_parent = self.nodes[current_parent].parent
         # Append parent 0 (x_init)
         self.path.append(0)
 
@@ -388,22 +381,22 @@ class Graph():
             Coordinates for successful path
         """
 
+        # Building path_coordinates (x, y)
         self.path_coordinates = []
-
-        for node in self.path:
-            x, y = self.tree[node]
-            self.path_coordinates.append((x,y))
+        for index in self.path:
+            node_object = self.nodes[index]
+            position = node_object.position
+            self.path_coordinates.append(position)
         
-        for i in range(len(self.x_position)):
-            for j in range(len(self.path_coordinates)):
-                x_match = self.x_position[i][-1] == self.path_coordinates[j][0]
-                y_match = self.y_position[i][-1] == self.path_coordinates[j][1]
-                if x_match and y_match:
-                    self.x_final_path.append(self.x_position[i])
-                    self.y_final_path.append(self.y_position[i])
-                    self.theta_final_path.append(self.theta_orientation[i])
+        for index in reversed(self.path[:-1]): # Go through all path backwards (root --> goal) but skip root
+            node_object = self.nodes[index]
+            if node_object.trajectory_samples is not None:
+                xs, ys, thetas = node_object.trajectory_samples
+                self.x_final_path.append(xs)
+                self.y_final_path.append(ys)
+                self.theta_final_path.append(thetas)
         
-        print(f"path_coordinates: {len(self.path_coordinates)}, x_final_path: {len(self.x_final_path)}")
+        print(f"[DEBUG] path_coordinates: {len(self.path_coordinates)}, x_final_path: {len(self.x_final_path)}")
         return self.path_coordinates
 
     def is_goal_reached(self, position, orientation_deg):
@@ -603,23 +596,31 @@ class Graph():
 
         return rect
 
-    def show_3d_map(self, init_point, goal_point):
+    def show_3d_map(self, nodes, init_point, goal_point):
         """Initialize figure in the 3D axis
             PARAMETERS
                 init_point : list (px, px, theta)
             RETURNS
                 None
         """
-        print("Reached plotting now")
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
-        # Graph points
-        for i in range(len(self.x_final_path)):
-            ax.scatter(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', s=5)
-        
+        if self.is_goal_found:
+            # Graph successful points
+            for i in range(len(self.x_final_path)):
+                ax.scatter(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', s=5)
+            title = 'kRRT Final Path'
+        else:
+            # Plot all the nodes
+            xs = [n.position[0] for n in nodes]
+            ys = [n.position[1] for n in nodes]
+            thetas = [n.orientation for n in nodes]
+            ax.scatter(xs, ys, thetas, color='brown', s=5)
+            title = 'kRRT Tree (Goal Not Yet Reached)'
+            
         # Initial point
-        ax.scatter(init_point[0], init_point[1], init_point[2], color='red', s=20)
+        ax.scatter(init_point[0], init_point[1], math.degrees(init_point[2]), color='red', s=20)
         ax.text(init_point[0], init_point[1], init_point[2], 'Initial Point', ha='left', va='center', fontsize=12)
         
         # Final point
@@ -630,7 +631,7 @@ class Graph():
         ax.set_xlabel('X (px)')
         ax.set_ylabel('Y (px)')
         ax.set_zlabel('Theta (deg)')
-        fig.canvas.manager.set_window_title('kRRT Car-Like Robot Path')
-        
+        fig.canvas.manager.set_window_title(title)
         plt.show()
 
+        

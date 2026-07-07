@@ -10,9 +10,9 @@ class Node():
     """
     #TODO: Add trajectory samples?
 
-    def __init__(self, position, orientation, parent, cost, trajectory_samples):
+    def __init__(self, position, orientation, parent, cost, trajectory_samples=None):
         self.position = position
         self.orientation = orientation
         self.parent = parent
         self.cost = cost
-        self.trajectory_samples = None
+        self.trajectory_samples = trajectory_samples

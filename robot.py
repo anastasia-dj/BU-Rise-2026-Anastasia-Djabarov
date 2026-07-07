@@ -121,8 +121,8 @@ class Robot():
             theta_samples.append(theta_end)
             
         
-        print(f"x_samples[-1]: {x_samples[-1]}; x_end: {x_end}")
-        print(f"y_samples[-1]: {y_samples[-1]}; y_end: {y_end}")
+        print(f"[DEBUG] x_samples[-1]: {x_samples[-1]}; x_end: {x_end}")
+        print(f"[DEBUG] y_samples[-1]: {y_samples[-1]}; y_end: {y_end}")
 
         return x_samples, y_samples, theta_samples
 
