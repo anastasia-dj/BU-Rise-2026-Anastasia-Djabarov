@@ -88,7 +88,7 @@ class Robot():
     
     def generate_arc_samples(self, x_init, y_init, theta_init, v, w, t_total, delta):
         """
-        Samples an arc's trajectory at evenly spaced timesteps (delta) for visualization.
+        Samples an arc's trajectory at evenly spaced timesteps (delta).
         PARAMETERS
             x_init : float (initial position x, px)
             y_init : float (initial position y, px)

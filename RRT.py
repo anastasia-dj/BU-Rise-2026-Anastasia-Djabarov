@@ -142,7 +142,7 @@ class Graph():
     
     def simulate(self, robot, event, environment, obstacles):
         """
-        It simulates the robot configuration from u (control input)
+        It simulates the robot's configuration from the initial configuration.
         PARAMETERS
             robot : robot object (Where all control inputs are simulated)
             event : Event (All events happening on screen)
@@ -207,7 +207,6 @@ class Graph():
             environment.store_trails()
             environment.empty_trails()
 
-        # TODO: Check
         return self.robot_last_position
             
     def new_state(self, x_rand, robot, event, environment, obstacles=None):
