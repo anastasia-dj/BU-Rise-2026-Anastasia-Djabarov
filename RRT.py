@@ -20,16 +20,15 @@ class Graph():
         self.x_goal = goal
         self.WIDTH, self.HEIGHT = map_dimensions
 
-        self.max_simulation_time = 4 # Max fwd simulation time
-        self.robot_last_position = []
-        self.robot_last_orientation = []
+        self.robot_position_history = []
+        self.robot_orientation_history = []
         self.controls = []
-        self.is_forward_simulation_finished = True
+        self.is_forward_simulation_finished = True #TODO: Remove is_forward_simulation_finished
         self.is_goal_found = False
         self.iteration = 0
 
-        self.robot_last_position.append(self.x_init[:2]) # List accumulating history
-        self.robot_last_orientation.append(math.degrees(self.x_init[2]))
+        self.robot_position_history.append(self.x_init[:2]) # List accumulating history
+        self.robot_orientation_history.append(math.degrees(self.x_init[2]))
         
         self.last_position = self.x_init[:2] # Single value holding most recent position
         self.last_orientation = self.x_init[2] 
@@ -48,7 +47,7 @@ class Graph():
 
         self.x_final_path.append(self.x_init[0])
         self.y_final_path.append(self.x_init[1])
-        self.theta_final_path.append(self.x_init[2])
+        self.theta_final_path.append(math.degrees(self.x_init[2]))
 
         # Store added states (i.e. multiple x_new)
         self.x_news = []
@@ -118,7 +117,7 @@ class Graph():
         # Metric simplification through Euclidean formula (c^2 = a^2 + b^2)
         return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + alpha**2)
     
-    def nearest_neighbor(self, tree, x_rand):
+    def nearest_neighbor(self, history, x_rand):
         """
         Returns the index of the nearest neighbor to randomly generated config (x_rand)
         PARAMETERS
@@ -130,13 +129,13 @@ class Graph():
         distances = []
 
         # Collect all the distances between each state and x-rand
-        for state in tree:
+        for state in history:
             distance = self.metric(state, x_rand)
             distances.append(distance)
 
         # Index of the minimum distance to x_rand
         self.min_distance = np.argmin(distances)
-        x_near = tree[self.min_distance]
+        x_near = history[self.min_distance]
 
         return x_near
     
@@ -165,7 +164,7 @@ class Graph():
         
         # Check if collision free
         x_final, y_final, theta_final = robot.closed_form_step(x_init, y_init, theta_init, self.v, self.w, self.edge_time_duration)
-        theta_final_deg = math.degrees(theta_final) # pygame wants degrees within update_visual
+        theta_final_deg = math.degrees(theta_final) # Pygame wants degrees within update_visual
         robot.update_visual(x_final, y_final, theta_final_deg)
         collision_free = self.is_free(configuration=robot.rect, obstacles=obstacles)
 
@@ -207,7 +206,7 @@ class Graph():
             environment.store_trails()
             environment.empty_trails()
 
-        return self.robot_last_position
+        return self.robot_position_history
             
     def new_state(self, x_rand, robot, event, environment, obstacles=None):
         """
@@ -232,7 +231,7 @@ class Graph():
 
             # Robot pos & orientation with min distance to x_rand
             self.x_new = self.nearest_neighbor(simulation, x_rand) # New config
-            self.theta_new = self.robot_last_orientation[self.min_distance] # Look at angle of nearest node
+            self.theta_new = self.robot_orientation_history[self.min_distance] # Look at angle of nearest node
 
             # Append new configs to a list
             self.x_news.append(self.x_new)
@@ -348,8 +347,8 @@ class Graph():
         RETURNS
             None
         """
-        self.robot_last_position.append(position)
-        self.robot_last_orientation.append(orientation)
+        self.robot_position_history.append(position)
+        self.robot_orientation_history.append(orientation)
 
     def path_to_goal(self):
         """
@@ -372,7 +371,7 @@ class Graph():
         # Append parent 0 (x_init)
         self.path.append(0)
 
-    # TODO: Issue with path generations
+    # TODO: Issue with path generations. Only checks nodes which reside on edges. 
     def get_path_coordinates(self):
         """
         Collects correspondant coordinates
@@ -519,7 +518,7 @@ class Graph():
         """
         # Draw the robot's x_goal configuration
         position = self.x_goal[:2]
-        orientation = math.degrees(self.x_init[2])
+        orientation = math.degrees(self.x_goal[2])
 
         self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
 
@@ -616,8 +615,8 @@ class Graph():
         ax.text(init_point[0], init_point[1], init_point[2], 'Initial Point', ha='left', va='center', fontsize=12)
         
         # Final point
-        ax.scatter(goal_point[0], goal_point[1], goal_point[2], color='green', s=20)
-        ax.text(goal_point[0], goal_point[1], goal_point[2], 'Goal Point', ha='left', va='center', fontsize=12)
+        ax.scatter(goal_point[0], goal_point[1], math.degrees(goal_point[2]), color='green', s=20)
+        ax.text(goal_point[0], goal_point[1], math.degrees(goal_point[2]), 'Goal Point', ha='left', va='center', fontsize=12)
 
         # Label axes and window
         ax.set_xlabel('X (px)')

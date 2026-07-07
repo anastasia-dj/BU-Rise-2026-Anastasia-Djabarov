@@ -47,7 +47,7 @@ parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', req
 parser.add_argument('-stb', '--show_tree_building', type=bool, 
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Shows the simulation forward in time')
-parser.add_argument('-rad', '--search_radius', nargs='+', type=float, metavar='', required=False,
+parser.add_argument('-rad', '--search_radius', type=float, metavar='', required=False,
 	default=10, help='The search radius of the robot when deciding which node to rewire.')
 args = parser.parse_args()
 
@@ -95,6 +95,7 @@ def main():
     if not args.show_tree_building:
         print('Simulating the system... Please wait.')
 
+    # NOTE: System does not stop when there are more than 5000 nodes
     while run and k < args.nodes:
         # Set loop run to 60 FPS
         clock.tick(environment.FPS)
@@ -128,8 +129,8 @@ def main():
                 
                 # If the path did not collide with something...
                 if x_new is not None:
-                    tree.append(x_new[0]) # Returns a tuple of configuration
-                    orientation_tree.append(x_new[1]) # Returns orientation
+                    tree.append(x_new[0]) # Stores a tuple of configuration
+                    orientation_tree.append(x_new[1]) # Stores orientation
 
                     # Update node ID list and parent list with x_new
                     values.append(node_value)
@@ -138,7 +139,7 @@ def main():
                     edge_time = graph.edge_time_duration 
                     cost.append(cost[parent_index] + edge_time) # Find cost of the present node by adding the parents 
 
-                    # Update node list, number of free collisions and sampled config (K)
+                    # Update node list, number of free collisions and sampled config (k)
                     node_value+=1
                     graph.number_of_nodes = len(tree)
                     graph.num_free_collision = 0	
@@ -166,9 +167,10 @@ def main():
             # Draws a small brown circle at every node position
             graph.draw_new_node(map=environment.map)
 
-            # Goal is found but show_tree_building is off
+        # Goal is found but show_tree_building is off
         if graph.is_goal_found:
             if not args.show_tree_building:
+                print(f"You have turned tree off, I will show the final map.")
                 environment.show_screen()
                 graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
                 graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
@@ -185,7 +187,9 @@ def main():
                 graph.draw_interpolation(robot=robot, environment=environment)
             
             pygame.quit()
+            print(f"I will show 3D map.")
             graph.show_3d_map(init_point=args.x_init, goal_point=args.x_goal)
+            break
 
         if rand_collision_free and args.show_random_configurations and args.show_tree_building:
             random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
