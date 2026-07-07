@@ -1,7 +1,6 @@
 import pygame
 import environment
 import robot
-import node
 import RRT
 import math
 import random
@@ -29,9 +28,6 @@ parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', requ
 parser.add_argument('-snc', '--show_new_configurations', type=bool,
  	action=argparse.BooleanOptionalAction, metavar='', required=False,
  	help='Show new config on screen')
-#TODO: Delete the bias when the "goal" position is deleted, so the tree expands in all directions equally.
-parser.add_argument('-bp', '--bias_percentage', type=int, metavar='', required=False, default=50,
-	help='Amount of bias the RRT from 1-100')
 parser.add_argument('-ptg', '--path_to_goal', type=bool, action=argparse.BooleanOptionalAction, 
 	metavar='', required=False, default=False, help='Draws the milestones from path to goal')
 parser.add_argument('-si', '--show_interpolation', type=bool, action=argparse.BooleanOptionalAction, 
@@ -74,17 +70,17 @@ def main():
     run = True;
     clock = pygame.time.Clock()
 
-    nodes = [node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
-    # tree = [] # Pos in px
-    # orientation_tree = [] # Orientation in degrees
-    # parent = []
-    # cost = [0.0] # Cost to get to a node from x_init
-    # values = []
-    # tree.append(x_init[:2]) # Append init node configuration
-    # orientation_tree.append(x_init[2]) # Append init node orientation
-    # # Add ID to the initial node
-    # parent.append(0)
-    # values.append(0)
+    # nodes = [node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
+    tree = [] # Pos in px
+    orientation_tree = [] # Orientation in degrees
+    parent = []
+    cost = [0.0] # Cost to get to a node from x_init
+    values = []
+    tree.append(x_init[:2]) # Append init node configuration
+    orientation_tree.append(x_init[2]) # Append init node orientation
+    # Add ID to the initial node
+    parent.append(0)
+    values.append(0)
 
     node_value = 0
     iteration = 0
@@ -135,14 +131,13 @@ def main():
             
             # If the path did not collide with something...
             if x_new is not None:
-                new_node = node(
-                    position=x_new[0],
-                    orientation=x_new[1],
-                    parent=random_parent_index,
-                    cost=nodes[random_parent_index].cost + graph.edge_time_duration
-                )
-                
-                
+                tree.append(x_new[0]) # Stores a tuple of configuration
+                orientation_tree.append(x_new[1]) # Stores orientation
+
+                # Update node ID list and parent list with x_new
+                parent.append(random_parent_index)
+                cost.append(cost[random_parent_index] + graph.v * graph.edge_time_duration)
+
 
                 assert 0 <= random_parent_index < len(tree), f"parent_index {random_parent_index} invalid for tree length"
 
@@ -151,7 +146,7 @@ def main():
                 graph.number_of_nodes = len(tree)
                 graph.num_free_collision = 0	
                 k += 1
-                print(f"[DEBUG] k={k}, len(tree)={len(tree)}, gap={len(tree)-k}")
+                print(f"[DEBUG] k={k}, len(tree)={len(tree)}")
 
                 graph.rewire_node(tree=tree, orientation_tree=orientation_tree, parent=parent, cost=cost, 
                                     search_radius=args.search_radius, delta=args.delta, x_new=x_new)

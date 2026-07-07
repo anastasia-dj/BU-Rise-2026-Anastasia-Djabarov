@@ -141,7 +141,7 @@ class Graph():
 
     #     return x_near
     
-    def simulate(self, robot, event, environment, obstacles, random_parent_index):
+    def simulate(self, robot, environment, obstacles, random_parent_index):
         """
         It simulates the robot's configuration from the initial configuration.
         PARAMETERS
@@ -230,7 +230,7 @@ class Graph():
         self.last_orientation = orientation_tree[random_parent_index]
 
         # Simulation fwd in time
-        simulation = self.simulate(robot=robot, event=event, environment=environment, obstacles=obstacles, random_parent_index=random_parent_index) # Returns x_final, y_final, theta_final_deg
+        simulation = self.simulate(robot=robot, environment=environment, obstacles=obstacles, random_parent_index=random_parent_index) # Returns x_final, y_final, theta_final_deg
 
         if simulation is not None:
             self.iteration += 1 # One tree iteration is done

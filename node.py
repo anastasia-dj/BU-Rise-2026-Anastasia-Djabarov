@@ -15,4 +15,4 @@ class Node():
         self.orientation = orientation
         self.parent = parent
         self.cost = cost
-        self.trajectory_samples = trajectory_samples
+        self.trajectory_samples = None
