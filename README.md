@@ -19,53 +19,53 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
 - **kinodynamic_RRT.py** - main script: parse command line args, then runs the main loop: sampling -> simulate() -> tree bookkeeping -> rewire_node() -> check goal
 
 ## High-Level Pseudocode
-tree = [x_init]
-parent = [0] # The root's parent index is itself
-cost = [0]
+    tree = [x_init];
+    parent = [0]; # The root's parent index is itself
+    cost = [0];
 
-while not goal_found and num_nodes < max_nodes:
-    x_rand = sample_random_configuration()
+    while not goal_found and num_nodes < max_nodes:
+        x_rand = sample_random_configuration()
 
-    if collision(x_rand):
-        continue
+        if collision(x_rand):
+            continue
 
-    # --- Simulate a node and create an arc-like edge ---
-    v = 1                                               # Fixed
-    w = random(0.5, -0.5)                               # Held through the duration of an edge
-    t = random (0.5, 4)                                 # Held through the duration of an edge
-    x_end = closed_form_step(last_position, v, w, t)    # Final position after random w and t
+        # --- Simulate a node and create an arc-like edge ---
+        v = 1                                               # Fixed
+        w = random(0.5, -0.5)                               # Held through the duration of an edge
+        t = random (0.5, 4)                                 # Held through the duration of an edge
+        x_end = closed_form_step(last_position, v, w, t)    # Final position after random w and t
 
-    if collision(x_end):
-        continue                # Discard position if collision occurs
+        if collision(x_end):
+            continue                # Discard position if collision occurs
 
-    # Save x_end into the ongoing history of ALL nodes ever added (not just this edge)
-    history.append(x_end)
-      
-    trajectory = generate_arc_samples(last_position, v, w, t, delta)
-    store trajectory in x_position / y_position / theta_orientation
-
-    # The new_node is whichever point in the ENTIRE history
-    #is closest to x_rand. (See Known Issue #1.)
-
-    new_node = nearest_neighbor(history, x_rand)
-    append new_node to tree
-    parent[new_node] = <ID at that same nearest-neighbor index>
-    cost[new_node] = cost[parent[new_node]] + t   # v=1, so cost = arc length = time
-
-    # --- Rewiring ---
-    for each sample within search_radius of new_node (across all edges):
-        candidate_cost = cost[that_sample's_edge_start] 
-            + (elapsed time to that sample) 
-            + (approx. connection cost to new_node)
-        cost_to_connect_sample_to_new_node = approximately straight-line distance  # approximation, not a real arc
-        if candidate_cost < cost[new_node]:
-            rewire new_node's parent to that sample
-            (promoting it to a tree node if it's mid-edge, not an endpoint)
+        # Save x_end into the ongoing history of ALL nodes ever added (not just this edge)
+        history.append(x_end)
         
-    if goal_reached(new_node):
-        goal_found = True
-        walk parent[] backward from goal to x_init -> path
-        plot tree + path in 3D (x, y, theta)
+        trajectory = generate_arc_samples(last_position, v, w, t, delta)
+        store trajectory in x_position / y_position / theta_orientation
+
+        # The new_node is whichever point in the ENTIRE history
+        #is closest to x_rand. (See Known Issue #1.)
+
+        new_node = nearest_neighbor(history, x_rand)
+        append new_node to tree
+        parent[new_node] = <ID at that same nearest-neighbor index>
+        cost[new_node] = cost[parent[new_node]] + t   # v=1, so cost = arc length = time
+
+        # --- Rewiring ---
+        for each sample within search_radius of new_node (across all edges):
+            candidate_cost = cost[that_sample's_edge_start] 
+                + (elapsed time to that sample) 
+                + (approx. connection cost to new_node)
+            cost_to_connect_sample_to_new_node = approximately straight-line distance  # approximation, not a real arc
+            if candidate_cost < cost[new_node]:
+                rewire new_node's parent to that sample
+                (promoting it to a tree node if it's mid-edge, not an endpoint)
+            
+        if goal_reached(new_node):
+            goal_found = True
+            walk parent[] backward from goal to x_init -> path
+            plot tree + path in 3D (x, y, theta)
 
 ## Current Design Decisions
 The three core design decisions (so far) were suggested by Professor Tron and adopted for this implementation:
