@@ -1,9 +1,12 @@
 import pygame
 import environment
 import robot
+import node
 import RRT
 import math
+import random
 import argparse
+import unittest
 import sys
 
 import matplotlib
@@ -20,12 +23,9 @@ parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, defau
 parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, default=0.05,
 	help='Fixed steps between frames for the visualization')
 parser.add_argument('-init', '--x_init', nargs='+', type=float, metavar='', required=False,
-	default=(50, 50, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
+	default=(320, 240, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', required=False,
 	default=(540, 380, 0), help='Goal node config in X, Y (pixels) and theta (radians)')
-parser.add_argument('-src', '--show_random_configurations', type=bool,
-	action=argparse.BooleanOptionalAction, metavar='', required=False, 
-	help='Show random config on screen')
 parser.add_argument('-snc', '--show_new_configurations', type=bool,
  	action=argparse.BooleanOptionalAction, metavar='', required=False,
  	help='Show new config on screen')
@@ -73,16 +73,19 @@ graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
 def main():
     run = True;
     clock = pygame.time.Clock()
-    tree = [] # Pos in px
-    orientation_tree = [] # Orientation in degrees
-    parent = []
-    cost = [0.0] # Cost to get to a node from x_init
-    values = []
-    tree.append(x_init[:2]) # Append init node configuration
-    orientation_tree.append(x_init[2]) # Append init node orientation
-    # Add ID to the initial node
-    parent.append(0)
-    values.append(0)
+
+    nodes = [node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
+    # tree = [] # Pos in px
+    # orientation_tree = [] # Orientation in degrees
+    # parent = []
+    # cost = [0.0] # Cost to get to a node from x_init
+    # values = []
+    # tree.append(x_init[:2]) # Append init node configuration
+    # orientation_tree.append(x_init[2]) # Append init node orientation
+    # # Add ID to the initial node
+    # parent.append(0)
+    # values.append(0)
+
     node_value = 0
     iteration = 0
     k = 0 
@@ -117,47 +120,56 @@ def main():
         # If the goal is not found
         if not graph.is_goal_found:
             # If the forward simulation is not finished
-            if graph.is_forward_simulation_finished:
+            # if graph.is_forward_simulation_finished:
                 # Generate a random node and check for collision
-                x_rand = graph.generate_random_node(bias=args.bias_percentage)
-                random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
-                rand_collision_free = graph.is_free(configuration=random_rect, obstacles=obstacles)
 
-            if rand_collision_free:
-                # Propagate with random control function 
-                x_new = graph.new_state(x_rand, robot, event, environment, obstacles)
+                # ---- TODO: SAMPLE CHANGE: MUST CHANGE THIS LINE ----
+                # x_rand = graph.generate_random_node(bias=args.bias_percentage)
+                # random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
+                # rand_collision_free = graph.is_free(configuration=random_rect, obstacles=obstacles)
+            
+            random_parent_index = random.randint(0, len(tree)-1)
+
+            # Propagate with random control function from a random node
+            x_new = graph.new_state(random_parent_index, robot, event, environment, tree, orientation_tree, obstacles)
+            
+            # If the path did not collide with something...
+            if x_new is not None:
+                new_node = node(
+                    position=x_new[0],
+                    orientation=x_new[1],
+                    parent=random_parent_index,
+                    cost=nodes[random_parent_index].cost + graph.edge_time_duration
+                )
                 
-                # If the path did not collide with something...
-                if x_new is not None:
-                    tree.append(x_new[0]) # Stores a tuple of configuration
-                    orientation_tree.append(x_new[1]) # Stores orientation
+                
 
-                    # Update node ID list and parent list with x_new
-                    values.append(node_value)
-                    parent = graph.generate_parents(values, parent)
-                    parent_index = parent[-1] # Check which index the parents are on
-                    edge_time = graph.edge_time_duration 
-                    cost.append(cost[parent_index] + edge_time) # Find cost of the present node by adding the parents 
+                assert 0 <= random_parent_index < len(tree), f"parent_index {random_parent_index} invalid for tree length"
 
-                    # Update node list, number of free collisions and sampled config (k)
-                    node_value+=1
-                    graph.number_of_nodes = len(tree)
-                    graph.num_free_collision = 0	
-                    k += 1
+                # Update node list, number of free collisions and sampled config (k)
+                node_value+=1
+                graph.number_of_nodes = len(tree)
+                graph.num_free_collision = 0	
+                k += 1
+                print(f"[DEBUG] k={k}, len(tree)={len(tree)}, gap={len(tree)-k}")
 
-                    graph.rewire_node(tree=tree, orientation_tree=orientation_tree, parent=parent, cost=cost, 
-                                      search_radius=args.search_radius, delta=args.delta, x_new=x_new)
-                                    
-                # if goal is found
-                if graph.is_goal_found:
-                    print(f"Goal is found!")
-                    graph.parent = parent # Attaches growing parent list to graph.parent
-                    graph.tree = tree # Attaches growing tree list to graph.tree
-                    graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
-                    # Get the list of node IDs of the winning route
-                    graph.path_to_goal() 
-                    # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
-                    graph.get_path_coordinates()
+                graph.rewire_node(tree=tree, orientation_tree=orientation_tree, parent=parent, cost=cost, 
+                                    search_radius=args.search_radius, delta=args.delta, x_new=x_new)
+
+                new_index = len(tree) -1
+                assert parent[new_index] < new_index, f"node {new_index} points to a parent {parent} which is not earlier in the tree"
+                assert cost[new_index] > cost[parent[new_index]], f"cost didn't increase from parent, {cost[parent[new_index]]}, to child {cost[new_index]}"
+                                
+            # if goal is found
+            if graph.is_goal_found:
+                print(f"Goal is found!")
+                graph.parent = parent # Attaches growing parent list to graph.parent
+                graph.tree = tree # Attaches growing tree list to graph.tree
+                graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
+                # Get the list of node IDs of the winning route
+                graph.path_to_goal() 
+                # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
+                graph.get_path_coordinates()
                     
 
         # For this to run, both need to be explicitly ENABLED
@@ -190,10 +202,6 @@ def main():
             print(f"I will show 3D map.")
             graph.show_3d_map(init_point=args.x_init, goal_point=args.x_goal)
             break
-
-        if rand_collision_free and args.show_random_configurations and args.show_tree_building:
-            random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
-            graph.draw_random_node(map=environment.map)
 
         iteration +=1
 

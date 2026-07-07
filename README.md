@@ -79,3 +79,15 @@ The three core design decisions (so far) were suggested by Professor Tron and ad
 2. Previous path extraction (get_path_coordinates()) currently matches path nodes to edges by checking for an exact endpoint match with the successful path. This fails for two reasons: (a) nodes created via mid-edge rewiring aren't stored at the end of an edge, and (b) generate_arc_samples() truncates to floor(t/delta) steps while the real node is computed using the full, untruncated edge_time_duration. In both cases, the sample essentially does not match the node's true coordinates for many nodes. 
 - The truncation issue (b) has since been fixed by manually adding the endpoint to the list. 
 3. Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Solving for the w and t that would truly connect the two configurations has not yet been implemented, so rewiring decisions are based on an approximation and not currently verified against a real simulated connecting arc. 
+4. Currently, the collision only checks for the initial and the final points and not throughout the entire arc. This does disregards the possibility of an obstacle remaining between the intial and final points. The program should sample points along the arc to check for collisions, rather than just checking the initial and final positions. 
+
+TRON NOTES:
+- TODO: make repository public
+- Instead of having 3 different lists, have a list of objects where each object is a node where there is a classification for tree, parent, cost, history, value
+- Select a random node you alrady have in the tree, and then sample a random angular velocity from that node, and then make the draw of an arc
+    - In practice: we will place the robot at a node, generate a bunch of random arcs
+
+- Test function for nearest neighbor
+    - unit test python module - various examples, the standard way. You set up some input data, you know the output you should get, you call the function, the result of the test is if the output of the function is the same as you were expecting. There is a way to automate. That is a good practice to have in general. Say you make some improvement or you find a bug in the code, you can make a new test for the same function. You can have a ton of test functions, and you can also run the previous five tests. 
+    - Good codebases usually have unit tests, otherwise when you are debugging something or fix something and another problem comes up, you want to know if it is like. If you have many unit tests, you are pretty sure it works and if it doesn't work it is because it is an unconsidered edge case. Helps you formalize what you THINK the code is doing versus what it does. more complex, more useful the unit test are 
+    - One method of developing code: You first write the test, assuming the functions that you want to write, and then afterwards you write the functions such that the test path. (Test-reading development) In general, there is nobody else that checks if your code is correct, and that is one way to make sure it is correct.

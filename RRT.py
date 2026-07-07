@@ -79,6 +79,7 @@ class Graph():
                 return False
         return True
 
+    # TODO: No longer used in node-sampling version
     def generate_random_node(self, bias):
         """
         Generates a random configuratin
@@ -117,29 +118,30 @@ class Graph():
         # Metric simplification through Euclidean formula (c^2 = a^2 + b^2)
         return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + alpha**2)
     
-    def nearest_neighbor(self, history, x_rand):
-        """
-        Returns the index of the nearest neighbor to randomly generated config (x_rand)
-        PARAMETERS
-            tree : list (Tree containing ALL configurations)
-            x_rand : tuple (x, y, and theta of random node generated)
-        RETURNS
-            tuple (Nearest node to random node generated)
-        """
-        distances = []
+    # TODO: Delete?
+    # def nearest_neighbor(self, history, x_rand):
+    #     """
+    #     Returns the index of the nearest neighbor to randomly generated config (x_rand)
+    #     PARAMETERS
+    #         tree : list (Tree containing ALL configurations)
+    #         x_rand : tuple (x, y, and theta of random node generated)
+    #     RETURNS
+    #         tuple (Nearest node to random node generated)
+    #     """
+    #     distances = []
 
-        # Collect all the distances between each state and x-rand
-        for state in history:
-            distance = self.metric(state, x_rand)
-            distances.append(distance)
+    #     # Collect all the distances between each state and x-rand
+    #     for state in history:
+    #         distance = self.metric(state, x_rand)
+    #         distances.append(distance)
 
-        # Index of the minimum distance to x_rand
-        self.min_distance = np.argmin(distances)
-        x_near = history[self.min_distance]
+    #     # Index of the minimum distance to x_rand
+    #     self.min_distance = np.argmin(distances)
+    #     x_near = history[self.min_distance]
 
-        return x_near
+    #     return x_near
     
-    def simulate(self, robot, event, environment, obstacles):
+    def simulate(self, robot, event, environment, obstacles, random_parent_index):
         """
         It simulates the robot's configuration from the initial configuration.
         PARAMETERS
@@ -157,7 +159,9 @@ class Graph():
         x_init, y_init = self.last_position
         theta_init = math.radians(self.last_orientation)
 
-        self.v = 1; # Linear velocity
+        print(f"[DEBUG] simulate() starting from {self.last_position} with chosen parent tree[{random_parent_index}]")
+
+        self.v = 10; # Linear velocity
         self.w = random.uniform(-0.5, 0.5) # Angular velocity
         self.edge_time_duration = random.uniform(0.5, 4)
         self.controls_vw = [self.v, self.w] 
@@ -180,8 +184,7 @@ class Graph():
             degrees_theta_value = math.degrees(t)
             thetas_deg.append(degrees_theta_value)
         
-        # Store the edge's last configuration and controls
-        self.store_configuration(position=(robot.x, robot.y), orientation=robot.theta)
+        # Store the edge's last controls
         self.store_controls(controls=self.controls_vw)
 
         # Store the edge's trajectory
@@ -206,11 +209,11 @@ class Graph():
             environment.store_trails()
             environment.empty_trails()
 
-        return self.robot_position_history
+        return (x_final, y_final), theta_final_deg
             
-    def new_state(self, x_rand, robot, event, environment, obstacles=None):
+    def new_state(self, random_parent_index, robot, event, environment, tree, orientation_tree, obstacles=None):
         """
-        Propagates a small step towards a random node (Given fwd simulations, selects the more suitable to advance toward x_rand)
+        Given a random node, propagates forward with a random control input (Constant v=1, randomized w and t)
         PARAMETERS
             x_rand : tuple (Coordinates of random generated node)
             robot: robot object (Robot w/ simulated control inputs)
@@ -223,25 +226,28 @@ class Graph():
             obstacles = [] 
         self.obstacles = obstacles
 
+        self.last_position = tree[random_parent_index][:2]
+        self.last_orientation = orientation_tree[random_parent_index]
+
         # Simulation fwd in time
-        simulation = self.simulate(robot=robot, event=event, environment=environment, obstacles=obstacles) # Returns self.robot_last_position (ENTIRE tree history)
+        simulation = self.simulate(robot=robot, event=event, environment=environment, obstacles=obstacles, random_parent_index=random_parent_index) # Returns x_final, y_final, theta_final_deg
 
         if simulation is not None:
             self.iteration += 1 # One tree iteration is done
 
-            # Robot pos & orientation with min distance to x_rand
-            self.x_new = self.nearest_neighbor(simulation, x_rand) # New config
-            self.theta_new = self.robot_orientation_history[self.min_distance] # Look at angle of nearest node
-
+            # Save new configurations
+            self.x_new, self.theta_new = simulation
+            
             # Append new configs to a list
             self.x_news.append(self.x_new)
             self.theta_news.append(self.theta_new)
 
-            if self.is_goal_reached():
+            if self.is_goal_reached(self.x_new, self.theta_new):
                 self.goal_configuration = self.number_of_nodes-1
                 self.is_goal_found = True
             
-            #Store the configs as latest configs
+            # Store the configs as latest configs
+            # Can possibly delete last_position and last_orientation
             self.last_position = self.x_new
             self.last_orientation = self.theta_new
             robot.x, robot.y = self.last_position[:2]
@@ -249,25 +255,26 @@ class Graph():
 
             return self.x_new, self.theta_new
         
-    def generate_parents(self, values, parent):
-        """
-        Generates a list of parents given value of node and nearest neighbor
-        PARAMETERS
-            values : list (Node IDs)
-            parent : list (Previous collection of parent nodes until the new is processed)
-        RETURNS
-            list (Ordered collection of the parents)
-        """
+    # TODO: Delete
+    # def generate_parents(self, values, parent):
+    #     """
+    #     Generates a list of parents given value of node and nearest neighbor
+    #     PARAMETERS
+    #         values : list (Node IDs)
+    #         parent : list (Previous collection of parent nodes until the new is processed)
+    #     RETURNS
+    #         list (Ordered collection of the parents)
+    #     """
 
-        parent_value = values[self.min_distance] 
-        parent_index = len(parent) 
-        parent.insert(parent_index, parent_value) # Add parent to the end of parent list
+    #     parent_value = values[self.min_distance] 
+    #     parent_index = len(parent) 
+    #     parent.insert(parent_index, parent_value) # Add parent to the end of parent list
 
-        if self.is_goal_reached():
-            # If goal is reached, add a final index +1 
-            parent.insert(parent_index+1, values[-1]+1)
+    #     if self.is_goal_reached():
+    #         # If goal is reached, add a final index +1 
+    #         parent.insert(parent_index+1, values[-1]+1)
 
-        return parent
+    #     return parent
     
     def rewire_node(self, tree, orientation_tree, parent, cost, search_radius, delta, x_new):
         """
@@ -296,47 +303,47 @@ class Graph():
                 new_x, new_y = x_new[0] # Unpack the tuple
                 distance = math.hypot(x_candidate[0] - new_x, x_candidate[1] - new_y)
                 if distance <= search_radius:
-                    cost_to_candidate = cost[parent[node_index]] + (j+1)*delta # Cost to reach the candidate from the root
+                    cost_to_candidate = cost[parent[node_index]] + (j+1)*delta*self.v # Cost to reach the candidate from the root, NOTE: With v
                     candidate_cost = cost_to_candidate + distance
                     if candidate_cost < best_cost:
                         best_cost = candidate_cost
                         best_point = (i,j)
         
-            if best_point is not None: # A better route was found
-                edge_index, point_index = best_point
-                last_point_index = len(self.x_position[edge_index])-1
-                
-                if last_point_index == point_index: # Check if candidate is already a node
-                    node_index = edge_index+1
-                    parent[-1] = node_index
-                    cost[-1] = best_cost
-                else: # Candidate is not a node (Consider: Node A is being rewired, Node B is being promoted, Node C is Node B's parent)
-                    # Save Node A's index first
-                    original_new_node_index = len(tree)-1
-                    print(f"len(tree)={len(tree)}, len(parent)={len(parent)}, original_new_node_index={original_new_node_index}")
+        if best_point is not None: # A better route was found
+            edge_index, point_index = best_point
+            last_point_index = len(self.x_position[edge_index])-1
+            
+            if last_point_index == point_index: # Check if candidate is already a node
+                node_index = edge_index+1
+                parent[-1] = node_index
+                cost[-1] = best_cost
+            else: # Candidate is not a node (Consider: Node A is being rewired, Node B is being promoted, Node C is Node B's parent)
+                # Save Node A's index first
+                original_new_node_index = len(tree)-1
+                print(f"len(tree)={len(tree)}, len(parent)={len(parent)}, original_new_node_index={original_new_node_index}")
 
-                    # Pull out Node B's data
-                    point_x = self.x_position[edge_index][point_index]
-                    point_y = self.y_position[edge_index][point_index]
-                    point_theta = self.theta_orientation[edge_index][point_index]
+                # Pull out Node B's data
+                point_x = self.x_position[edge_index][point_index]
+                point_y = self.y_position[edge_index][point_index]
+                point_theta = self.theta_orientation[edge_index][point_index]
 
-                    # Find the parent of the edge Node B is on (Node C)
-                    edge_start_index = parent[edge_index+1] 
+                # Find the parent of the edge Node B is on (Node C)
+                edge_start_index = parent[edge_index+1] 
 
-                    # Create Node B 
-                    tree.append((point_x, point_y)) 
-                    orientation_tree.append(point_theta)
-                    parent.append(edge_start_index)
-                    cost.append(cost[edge_start_index] + (point_index+1) * delta) # Append the cost  of B to the list
+                # Create Node B 
+                tree.append((point_x, point_y)) 
+                orientation_tree.append(point_theta)
+                parent.append(edge_start_index)
+                cost.append(cost[edge_start_index] + (point_index+1) * delta) # Append the cost  of B to the list
 
-                    # Find Node B's index
-                    new_node_index = len(tree)-1
+                # Find Node B's index
+                new_node_index = len(tree)-1
 
-                    # Rewire Node A to point to Node B
-                    parent[original_new_node_index] = new_node_index
-                    cost[original_new_node_index] = best_cost
+                # Rewire Node A to point to Node B
+                parent[original_new_node_index] = new_node_index
+                cost[original_new_node_index] = best_cost
 
-                    print(f"Rewired node {original_new_node_index} to parent {parent[original_new_node_index]}, cost {best_cost:.3f}")
+                print(f"Rewired node {original_new_node_index} to parent {parent[original_new_node_index]}, cost {best_cost:.3f}")
 
     def store_configuration(self, position, orientation):
         """
@@ -399,19 +406,20 @@ class Graph():
         print(f"path_coordinates: {len(self.path_coordinates)}, x_final_path: {len(self.x_final_path)}")
         return self.path_coordinates
 
-    def is_goal_reached(self):
+    def is_goal_reached(self, position, orientation_deg):
         """
         Check if the tree reached the goal
         PARAMETERS
-            none
+            position : list
+            orientation_deg : float (deg)
         RETURNS 
             bool
         """
 
         goal_position, goal_orientation = self.x_goal[:2], self.x_goal[2]
-        last_position_x, last_position_y = self.last_position[0], self.last_position[1]
+        last_position_x, last_position_y = position[0], position[1]
         goal_position_x, goal_position_y = goal_position[0], goal_position[1]
-        last_orientation = math.radians(self.last_orientation)
+        last_orientation = math.radians(orientation_deg)
 
         # Provide allowed offsets ("Good enough")
         upper_offset_x = goal_position_x+self.position_boundary
