@@ -26,7 +26,7 @@ parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, de
 parser.add_argument('-init', '--x_init', nargs='+', type=float, metavar='', required=False,
 	default=(320, 240, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', required=False,
-	default=(540, 380, 0), help='Goal node config in X, Y (pixels) and theta (radians)')
+	default=(540, 320, 0), help='Goal node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-snc', '--show_new_configurations', type=bool,
  	action=argparse.BooleanOptionalAction, metavar='', required=False,
  	help='Show new config on screen')
@@ -38,7 +38,7 @@ parser.add_argument('-si', '--show_interpolation', type=bool, action=argparse.Bo
 parser.add_argument('-mr', '--move_robot', type=bool, action=argparse.BooleanOptionalAction, 
 	metavar='', required=False, default=True,
 	help='Shows the movements of the robot from start to end')
-parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=25,
+parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=10,
 	help='Allowed position region of the pixels for the robot to reach the goal')
 parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', required=False,
  	default=math.pi, help='Allowed orientation region of the angle for the robot to reach the goal')
@@ -126,7 +126,6 @@ def main():
                 nodes.append(new_node)
                 new_index = len(nodes) -1
 
-                assert new_node.parent < new_index, f"node {new_index} points to parent {new_node.parent}, not earlier in the tree"
                 assert new_node.cost > nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
 
 

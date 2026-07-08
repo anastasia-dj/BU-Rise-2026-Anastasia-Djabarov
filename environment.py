@@ -107,7 +107,7 @@ class Environment():
     
     def make_obstacles(self):
         # Generate/Combine the obstacles 
-        obstacle1 = self.make_obstacles_T(initial_point=(350,200))
+        obstacle1 = self.make_obstacles_T(initial_point=(350,300))
         obstacle2 = self.make_obstacles_L(initial_point=(150,20))
 
         self.obstacles.append(obstacle1)

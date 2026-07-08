@@ -186,6 +186,13 @@ class Graph():
             degrees_theta_value = math.degrees(t)
             thetas_deg.append(degrees_theta_value)
         
+        # Check if the POINTS are collision free
+        for x,y,theta in zip(xs_sample, ys_sample, thetas_deg):
+            robot.update_visual(x,y,theta)
+            if not self.is_free(configuration=robot.rect, obstacles=obstacles):
+                robot.update_visual(self.last_position[0], self.last_position[1], self.last_orientation)
+                return None
+        
         # Store the edge's last controls
         self.store_controls(controls=self.controls_vw)
 
@@ -193,6 +200,9 @@ class Graph():
         if self.show_tree_building:
             for x, y, theta in zip(xs_sample, ys_sample, thetas_deg):
                 robot.update_visual(x, y, theta)
+
+                if self.obstacles != []:
+                    environment.draw_obstacles()
 
                 self.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
                 self.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
@@ -316,6 +326,13 @@ class Graph():
         if point_index == last_point_index: # Check if candidate is already a node
             new_node.parent = edge_index
             new_node.cost = best_cost
+
+            # Add init and final path point (NEW)
+            new_node.trajectory_samples = (
+                [xs[point_index], new_node.position[0]], 
+                [ys[point_index], new_node.position[1]],
+                [thetas[point_index], new_node.orientation]
+            )
         else: 
             # Candidate is mid-edge. Split edge_node's edge, promoting a new node M
             point_x, point_y, point_theta = xs[point_index], ys[point_index], thetas[point_index]
@@ -338,6 +355,13 @@ class Graph():
             # Rewire new_node to promoted M
             new_node.parent = m_index
             new_node.cost = best_cost
+
+            # Add init and final path point (NEW)
+            new_node.trajectory_samples = (
+                [point_x, new_node.position[0]],
+                [point_y, new_node.position[1]],
+                [point_theta, new_node.orientation]
+            )
         
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
@@ -606,10 +630,12 @@ class Graph():
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
+        branch_line = None
+
         if self.is_goal_found:
             # Graph successful points
             for i in range(len(self.x_final_path)):
-                ax.scatter(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', s=5)
+                ax.plot(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', marker='.', markersize=2)
             title = 'kRRT Final Path'
         else:
             # Plot all the nodes
@@ -618,6 +644,17 @@ class Graph():
             thetas = [n.orientation for n in nodes]
             ax.scatter(xs, ys, thetas, color='brown', s=5)
             title = 'kRRT Tree (Goal Not Yet Reached)'
+
+            # Build parent -> child branches as one line, with None to break segments
+            branch_x, branch_y, branch_theta = [], [], []
+            for i, n in enumerate(nodes):
+                if i == 0:
+                    continue # The root's parent is itself so skip this 
+                parent = nodes[n.parent]
+                branch_x += [n.position[0], parent.position[0], float('nan')]
+                branch_y += [n.position[1], parent.position[1], float('nan')]
+                branch_theta += [n.orientation, parent.orientation, float('nan')]
+            branch_line, = ax.plot(branch_x, branch_y, branch_theta, color='brown', linewidth=0.5, visible=False)
             
         # Initial point
         ax.scatter(init_point[0], init_point[1], math.degrees(init_point[2]), color='red', s=20)
@@ -632,6 +669,21 @@ class Graph():
         ax.set_ylabel('Y (px)')
         ax.set_zlabel('Theta (deg)')
         fig.canvas.manager.set_window_title(title)
+
+
+        # View switching
+        default_elevation, default_azimuth = ax.elev, ax.azim
+
+        def on_key(event):
+            if event.key == 't':
+                ax.view_init(elev=90, azim=-90)
+            elif event.key == 'r':
+                ax.view_init(elev=default_elevation, azim=default_azimuth)
+            elif event.key == 'b' and branch_line is not None:
+                branch_line.set_visible(not branch_line.get_visible())
+            fig.canvas.draw_idle()
+        
+        fig.canvas.mpl_connect('key_press_event', on_key)
         plt.show()
 
         

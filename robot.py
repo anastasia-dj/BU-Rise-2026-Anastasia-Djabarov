@@ -77,13 +77,14 @@ class Robot():
             (x_fin, y_fin, theta_fin) : tuple (final position)
         """
         if abs(w) < 1e-3: # Check if the robot is turning at all
-            return x_init + v*t*math.cos(theta_init), y_init + v*t*math.sin(theta_init), theta_init # Theta is constant, integration is trivial
+            return x_init + v*t*math.cos(theta_init), y_init - v*t*math.sin(theta_init), theta_init # Theta is constant, integration is trivial
         
         r = v/w
         theta_fin = theta_init + w*t # Calculate new theta
         x_fin = x_init + r * (math.sin(theta_fin) - math.sin(theta_init))
-        y_fin = y_init - r * (math.cos(theta_fin) - math.cos(theta_init))
+        y_fin = y_init + r * (math.cos(theta_fin) - math.cos(theta_init))
         return x_fin, y_fin, theta_fin
+        #NOTE: y equations are flipped (- --> +) because pygame treats +y as downwards.
 
     
     def generate_arc_samples(self, x_init, y_init, theta_init, v, w, t_total, delta):
