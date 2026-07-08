@@ -25,7 +25,6 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
         v = constant                                        # Fixed
         w = random(0.5, -0.5)                               # Held through the duration of an edge
         t = random (0.5, 4)                                 # Held through the duration of an edge
-        x_end = closed_form_step(nodes[random_parent_index].position, v, w, t)
 
         trajectory = generate_arc_samples(nodes[random_parent_index].position, v, w, t, delta)
 
