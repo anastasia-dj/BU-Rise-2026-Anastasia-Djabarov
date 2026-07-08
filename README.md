@@ -27,8 +27,8 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
         t = random (0.5, 4)                                 # Held through the duration of an edge
         x_end = closed_form_step(nodes[random_parent_index].position, v, w, t)
 
-        if collision(x_end):
-            continue                # Discard position if collision occurs
+        if collision(trajectory):
+            continue                # Discard edge if any point along it collides
 
         trajectory = generate_arc_samples(nodes[random_parent_index].position, v, w, t, delta)
 
