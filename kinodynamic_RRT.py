@@ -3,8 +3,12 @@ import environment
 import robot
 import RRT
 import math
+import random
 import argparse
+import unittest
 import sys
+
+from node import Node
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -20,18 +24,12 @@ parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, defau
 parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, default=0.05,
 	help='Fixed steps between frames for the visualization')
 parser.add_argument('-init', '--x_init', nargs='+', type=float, metavar='', required=False,
-	default=(50, 50, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
+	default=(320, 240, 0), help='Initial node config in X, Y (pixels) and theta (radians)')
 parser.add_argument('-goal', '--x_goal', nargs='+', type=float, metavar='', required=False,
 	default=(540, 380, 0), help='Goal node config in X, Y (pixels) and theta (radians)')
-parser.add_argument('-src', '--show_random_configurations', type=bool,
-	action=argparse.BooleanOptionalAction, metavar='', required=False, 
-	help='Show random config on screen')
 parser.add_argument('-snc', '--show_new_configurations', type=bool,
  	action=argparse.BooleanOptionalAction, metavar='', required=False,
  	help='Show new config on screen')
-#TODO: Delete the bias when the "goal" position is deleted, so the tree expands in all directions equally.
-parser.add_argument('-bp', '--bias_percentage', type=int, metavar='', required=False, default=50,
-	help='Amount of bias the RRT from 1-100')
 parser.add_argument('-ptg', '--path_to_goal', type=bool, action=argparse.BooleanOptionalAction, 
 	metavar='', required=False, default=False, help='Draws the milestones from path to goal')
 parser.add_argument('-si', '--show_interpolation', type=bool, action=argparse.BooleanOptionalAction, 
@@ -47,7 +45,7 @@ parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', req
 parser.add_argument('-stb', '--show_tree_building', type=bool, 
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Shows the simulation forward in time')
-parser.add_argument('-rad', '--search_radius', nargs='+', type=float, metavar='', required=False,
+parser.add_argument('-rad', '--search_radius', type=float, metavar='', required=False,
 	default=10, help='The search radius of the robot when deciding which node to rewire.')
 args = parser.parse_args()
 
@@ -73,32 +71,24 @@ graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
 def main():
     run = True;
     clock = pygame.time.Clock()
-    tree = [] # Pos in px
-    orientation_tree = [] # Orientation in degrees
-    parent = []
-    cost = [0.0] # Cost to get to a node from x_init
-    values = []
-    tree.append(x_init[:2]) # Append init node configuration
-    orientation_tree.append(x_init[2]) # Append init node orientation
-    # Add ID to the initial node
-    parent.append(0)
-    values.append(0)
-    node_value = 0
+
+    nodes = [Node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
+
     iteration = 0
     k = 0 
     graph.position_boundary = args.position_boundary
     graph.orientation_boundary = args.orientation_boundary
     graph.show_tree_building = args.show_tree_building
     graph.delta = args.delta 
+    graph.number_of_nodes = len(nodes)
     environment.make_obstacles()
 
     if not args.show_tree_building:
-        print('Simulating the system... Please wait.')
+        print('[EVENT] Simulating the system... Please wait.')
 
+    # Main growth loop
     while run and k < args.nodes:
-        # Set loop run to 60 FPS
         clock.tick(environment.FPS)
-        print(f"top of while loop, is_fwd_finished={graph.is_forward_simulation_finished}")
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -115,87 +105,82 @@ def main():
         
         # If the goal is not found
         if not graph.is_goal_found:
-            # If the forward simulation is not finished
-            if graph.is_forward_simulation_finished:
-                # Generate a random node and check for collision
-                x_rand = graph.generate_random_node(bias=args.bias_percentage)
-                random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
-                rand_collision_free = graph.is_free(configuration=random_rect, obstacles=obstacles)
+            # Find a random node
+            random_parent_index = random.randint(0, len(nodes)-1)
 
-            if rand_collision_free:
-                # Propagate with random control function 
-                x_new = graph.new_state(x_rand, robot, event, environment, obstacles)
-                
-                # If the path did not collide with something...
-                if x_new is not None:
-                    tree.append(x_new[0]) # Returns a tuple of configuration
-                    orientation_tree.append(x_new[1]) # Returns orientation
-
-                    # Update node ID list and parent list with x_new
-                    values.append(node_value)
-                    parent = graph.generate_parents(values, parent)
-                    parent_index = parent[-1] # Check which index the parents are on
-                    edge_time = graph.edge_time_duration 
-                    cost.append(cost[parent_index] + edge_time) # Find cost of the present node by adding the parents 
-
-                    # Update node list, number of free collisions and sampled config (K)
-                    node_value+=1
-                    graph.number_of_nodes = len(tree)
-                    graph.num_free_collision = 0	
-                    k += 1
-
-                    graph.rewire_node(tree=tree, orientation_tree=orientation_tree, parent=parent, cost=cost, 
-                                      search_radius=args.search_radius, delta=args.delta, x_new=x_new)
-                                    
-                # if goal is found
-                if graph.is_goal_found:
-                    print(f"Goal is found!")
-                    graph.parent = parent # Attaches growing parent list to graph.parent
-                    graph.tree = tree # Attaches growing tree list to graph.tree
-                    graph.orientation_tree = orientation_tree # Attaches growing orientation tree list to graph.orientation_tree
-                    # Get the list of node IDs of the winning route
-                    graph.path_to_goal() 
-                    # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
-                    graph.get_path_coordinates()
-                    
-
-        # For this to run, both need to be explicitly ENABLED
-        if args.show_new_configurations and args.show_tree_building:
-            # Draws a small rotated robot image at every node position added to the tree 
-            graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
-            # Draws a small brown circle at every node position
-            graph.draw_new_node(map=environment.map)
-
-            # Goal is found but show_tree_building is off
-        if graph.is_goal_found:
-            if not args.show_tree_building:
-                environment.show_screen()
-                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-                environment.draw_trajectory_trail()
-                pygame.display.update()
-                pygame.time.delay(500)
-
-            # Display such and such
-            if args.path_to_goal:
-                graph.draw_path_to_goal(map=environment.map)
-            if args.move_robot:
-                graph.draw_trajectory(robot=robot, environment=environment)
-            if args.show_interpolation:
-                graph.draw_interpolation(robot=robot, environment=environment)
+            # The result of propgation with random control function from a random node
+            result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
             
-            pygame.quit()
-            graph.show_3d_map(init_point=args.x_init, goal_point=args.x_goal)
+            # If the path did not collide with something... #TODO: Sample points across the collision
+            if result is not None:
+                x_new, theta_new, trajectory_samples = result
 
-        if rand_collision_free and args.show_random_configurations and args.show_tree_building:
-            random_rect = graph.draw_random_robot_configuration(robot_img=robot.img, environment=environment)
-            graph.draw_random_node(map=environment.map)
+                # Create new node
+                new_node = Node(
+                    position=x_new,
+                    orientation=theta_new,
+                    parent=random_parent_index,
+                    cost=nodes[random_parent_index].cost + graph.edge_time_duration*graph.v,
+                    trajectory_samples=trajectory_samples
+                )
+                nodes.append(new_node)
+                new_index = len(nodes) -1
 
-        iteration +=1
+                assert new_node.parent < new_index, f"node {new_index} points to parent {new_node.parent}, not earlier in the tree"
+                assert new_node.cost > nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
 
-        if not graph.is_goal_found:
+
+                # Update sampled config (k)
+                
+                graph.number_of_nodes = len(nodes)
+                k += 1
+                print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
+
+                graph.rewire_node(nodes=nodes, search_radius=args.search_radius, delta=args.delta)
+            
+            if args.show_new_configurations and args.show_tree_building:
+                # Draws a small rotated robot image at every node position added to the tree 
+                graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
+                # Draws a small brown circle at every node position
+                graph.draw_new_node(map=environment.map)
+
+            # if goal is found
+            if graph.is_goal_found:
+                break # Stop growing 
+
+            iteration += 1
             pygame.display.update()
             environment.map.fill(environment.WHITE)
+                        
+    print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}")
+
+    if graph.is_goal_found:
+        graph.nodes = nodes # Attaches growing node list to graph.node
+        # Get the list of node IDs of the winning route
+        graph.path_to_goal() 
+        # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
+        graph.get_path_coordinates()
+        
+    if not args.show_tree_building:
+        environment.show_screen()
+        graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+        graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+        environment.draw_trajectory_trail()
+        pygame.display.update()
+        pygame.time.delay(500)
+
+    if graph.is_goal_found:
+        # Display such and such
+        if args.path_to_goal:
+            graph.draw_path_to_goal(map=environment.map)
+        if args.move_robot:
+            graph.draw_trajectory(robot=robot, environment=environment)
+        if args.show_interpolation:
+            graph.draw_interpolation(robot=robot, environment=environment)
+        
+    pygame.quit()
+    graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
+    
 
     sys.exit()
 

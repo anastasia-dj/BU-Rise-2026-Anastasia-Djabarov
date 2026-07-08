@@ -113,6 +113,17 @@ class Robot():
             y_samples.append(y)
             theta_samples.append(theta)
 
+        # Add end-point if the end point is missed 
+        x_end, y_end, theta_end = self.closed_form_step(x_init, y_init, theta_init, v, w, t_total)
+        if x_samples[-1] != x_end:
+            x_samples.append(x_end)
+            y_samples.append(y_end)
+            theta_samples.append(theta_end)
+            
+        
+        print(f"[DEBUG] x_samples[-1]: {x_samples[-1]}; x_end: {x_end}")
+        print(f"[DEBUG] y_samples[-1]: {y_samples[-1]}; y_end: {y_end}")
+
         return x_samples, y_samples, theta_samples
 
     def update_visual(self, x, y, theta):
