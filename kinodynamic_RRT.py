@@ -111,7 +111,7 @@ def main():
             # The result of propgation with random control function from a random node
             result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
             
-            # If the path did not collide with something... #TODO: Sample points across the collision
+            # If the path did not collide with something... 
             if result is not None:
                 x_new, theta_new, trajectory_samples = result
 
@@ -130,7 +130,6 @@ def main():
 
 
                 # Update sampled config (k)
-                
                 graph.number_of_nodes = len(nodes)
                 k += 1
                 print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
@@ -176,10 +175,10 @@ def main():
             graph.draw_trajectory(robot=robot, environment=environment)
         if args.show_interpolation:
             graph.draw_interpolation(robot=robot, environment=environment)
-        
+
+    # Show 3D map  
     pygame.quit()
     graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
-    
 
     sys.exit()
 

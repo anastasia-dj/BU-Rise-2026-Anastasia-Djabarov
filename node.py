@@ -8,8 +8,7 @@ class Node():
     cost : Cost-to-come for the node
 
     """
-    #TODO: Add trajectory samples?
-
+    
     def __init__(self, position, orientation, parent, cost, trajectory_samples=None):
         self.position = position
         self.orientation = orientation

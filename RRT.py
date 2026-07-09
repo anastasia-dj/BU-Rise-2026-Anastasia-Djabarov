@@ -25,7 +25,6 @@ class Graph():
         self.robot_position_history = []
         self.robot_orientation_history = []
         self.controls = []
-        self.is_forward_simulation_finished = True #TODO: Remove is_forward_simulation_finished
         self.is_goal_found = False
         self.iteration = 0
 
@@ -81,26 +80,26 @@ class Graph():
                 return False
         return True
 
-    # TODO: No longer used in node-sampling version
-    def generate_random_node(self, bias):
-        """
-        Generates a random configuratin
-        PARAMETERS:
-            bias : int (Goal bias percentage)
-        RETURNS: 
-            tuple : coordinate of random node
-        """
+    # No longer used in node-sampling version
+    # def generate_random_node(self, bias):
+    #     """
+    #     Generates a random configuratin
+    #     PARAMETERS:
+    #         bias : int (Goal bias percentage)
+    #     RETURNS: 
+    #         tuple : coordinate of random node
+    #     """
 
-        #Sample a robot config in (x, y, theta)
-        self.x_rand = int(random.uniform(0, self.WIDTH)), int(random.uniform(0, self.HEIGHT)), math.radians(random.uniform(0, 360))
+    #     #Sample a robot config in (x, y, theta)
+    #     self.x_rand = int(random.uniform(0, self.WIDTH)), int(random.uniform(0, self.HEIGHT)), math.radians(random.uniform(0, 360))
 
-        # Likelihood of goal bias 
-        bias_percentage = 10 - bias//10 if bias != 100 else 1
+    #     # Likelihood of goal bias 
+    #     bias_percentage = 10 - bias//10 if bias != 100 else 1
 
-        if self.iteration%bias_percentage == 0:
-            self.x_rand = self.x_goal
+    #     if self.iteration%bias_percentage == 0:
+    #         self.x_rand = self.x_goal
         
-        return self.x_rand
+    #     return self.x_rand
     
     def metric(self, p1, p2):
         """
@@ -120,7 +119,7 @@ class Graph():
         # Metric simplification through Euclidean formula (c^2 = a^2 + b^2)
         return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + alpha**2)
     
-    # TODO: Delete?
+    # No longer used in node-sampling version
     # def nearest_neighbor(self, history, x_rand):
     #     """
     #     Returns the index of the nearest neighbor to randomly generated config (x_rand)
@@ -255,7 +254,7 @@ class Graph():
 
             return self.x_new, self.theta_new, trajectory_samples
         
-    # TODO: Delete
+    # No longer used in node-sampling version
     # def generate_parents(self, values, parent):
     #     """
     #     Generates a list of parents given value of node and nearest neighbor

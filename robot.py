@@ -13,7 +13,7 @@ class Robot():
 
     def __init__(self, start, robot_img, length):
         self.x = start[0] # Note, values in PIXELS.
-        self.y = start[1] # TODO: CHANGE PIXELS -> METERS
+        self.y = start[1] 
         self.theta = math.degrees(start[2]); # Rad heading --> Degrees
         self.phi = 0 # Init steering angle
         self.L = self.meters_to_pixels(length);
@@ -23,7 +23,6 @@ class Robot():
         self.goal = pygame.image.load(robot_img[1])
         self.img = pygame.image.load(robot_img[2])
         self.rotated = self.img # For when the robot rotates
-        #TODO: Consider adding a mask here instead of box
         self.rect = self.rotated.get_rect(center=(self.x, self.y))
 
         # Time variant
@@ -42,8 +41,7 @@ class Robot():
         # Map: pygame.Surface
         map.blit(source=self.rotated, dest=self.rect)
 
-    #TODO: Get rid of "event"
-    def move(self, event=None, u=None):
+    def move(self, u=None):
         # Move the img of the robot with a Euler assumption
 
         # Establish the control input u
@@ -120,10 +118,6 @@ class Robot():
             x_samples.append(x_end)
             y_samples.append(y_end)
             theta_samples.append(theta_end)
-            
-        
-        print(f"[DEBUG] x_samples[-1]: {x_samples[-1]}; x_end: {x_end}")
-        print(f"[DEBUG] y_samples[-1]: {y_samples[-1]}; y_end: {y_end}")
 
         return x_samples, y_samples, theta_samples
 
