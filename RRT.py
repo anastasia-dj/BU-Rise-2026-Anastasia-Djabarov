@@ -23,6 +23,7 @@ class Graph():
         
         self.candidates_in_radius = 0
         self.candidates_blocked_by_heading = 0
+        self.v_magnitude = 10
 
         self.robot_position_history = []
         self.robot_orientation_history = []
@@ -102,16 +103,15 @@ class Graph():
 
         print(f"[DEBUG] simulate() starting from {self.last_position} with chosen parent tree[{random_parent_index}]")
 
-        v_magnitude = 10
         if random.uniform(0,100) < self.anti_drive_bias:
             if self.anti_drive_mode == 'stop':
                 self.v = 0
             elif self.anti_drive_mode == 'reverse':
-                self.v = -v_magnitude
+                self.v = -self.v_magnitude
             else: 
-                self.v = random.choice([0, -v_magnitude]) # 'both
+                self.v = random.choice([0, -self.v_magnitude]) # 'both
         else:
-            self.v = v_magnitude # Linear velocity
+            self.v = self.v_magnitude # Linear velocity
         self.w = random.uniform(-0.5, 0.5) # Angular velocity
         self.edge_time_duration = random.uniform(0.5, 4)
         self.controls_vw = [self.v, self.w] 
@@ -305,8 +305,9 @@ class Graph():
             delta : float
         RETURNS xs, ys, thetas
         """
+        
         distance = math.hypot(end_x - start_x, end_y - start_y)
-        spacing = abs(self.v)*delta # Px distance between points
+        spacing = self.v_magnitude*delta # Px distance between points
         steps = max(1, round(distance/spacing))
         theta_difference = ((end_theta - start_theta) + 180) % 360 - 180 # Shortest angular path
 

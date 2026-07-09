@@ -52,7 +52,7 @@ parser.add_argument('-rw', '--rewire', type=bool,
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Rewires the tree nodes.')
 parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
-	help='Allowed position region of the pixels for the robot to reach the goal')
+	help='Seed of the random numbers taken.')
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=10,
 	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
 parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
@@ -134,7 +134,7 @@ def main():
                     position=x_new,
                     orientation=theta_new,
                     parent=random_parent_index,
-                    cost=nodes[random_parent_index].cost + graph.edge_time_duration*graph.v,
+                    cost=nodes[random_parent_index].cost + graph.edge_time_duration*abs(graph.v),
                     trajectory_samples=trajectory_samples
                 )
                 nodes.append(new_node)
