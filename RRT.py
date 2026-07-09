@@ -20,6 +20,9 @@ class Graph():
         self.x_init = start
         self.x_goal = goal
         self.WIDTH, self.HEIGHT = map_dimensions
+        
+        self.candidates_in_radius = 0
+        self.candidates_blocked_by_heading = 0
 
         self.robot_position_history = []
         self.robot_orientation_history = []
@@ -99,7 +102,16 @@ class Graph():
 
         print(f"[DEBUG] simulate() starting from {self.last_position} with chosen parent tree[{random_parent_index}]")
 
-        self.v = 10; # Linear velocity
+        v_magnitude = 10
+        if random.uniform(0,100) < self.anti_drive_bias:
+            if self.anti_drive_mode == 'stop':
+                self.v = 0
+            elif self.anti_drive_mode == 'reverse':
+                self.v = -v_magnitude
+            else: 
+                self.v = random.choice([0, -v_magnitude]) # 'both
+        else:
+            self.v = v_magnitude # Linear velocity
         self.w = random.uniform(-0.5, 0.5) # Angular velocity
         self.edge_time_duration = random.uniform(0.5, 4)
         self.controls_vw = [self.v, self.w] 
@@ -190,29 +202,8 @@ class Graph():
                 self.is_goal_found = True
 
             return self.x_new, self.theta_new, trajectory_samples
-        
-    # No longer used in node-sampling version
-    # def generate_parents(self, values, parent):
-    #     """
-    #     Generates a list of parents given value of node and nearest neighbor
-    #     PARAMETERS
-    #         values : list (Node IDs)
-    #         parent : list (Previous collection of parent nodes until the new is processed)
-    #     RETURNS
-    #         list (Ordered collection of the parents)
-    #     """
-
-    #     parent_value = values[self.min_distance] 
-    #     parent_index = len(parent) 
-    #     parent.insert(parent_index, parent_value) # Add parent to the end of parent list
-
-    #     if self.is_goal_reached():
-    #         # If goal is reached, add a final index +1 
-    #         parent.insert(parent_index+1, values[-1]+1)
-
-    #     return parent
     
-    def rewire_node(self, nodes, search_radius, delta):
+    def rewire_node(self, nodes, search_radius, delta, heading_boundary):
         """
         Within a search radius, it finds the position (not strictly a node) with the lowest cost and rewires the node.
         PARAMETERS
@@ -231,6 +222,8 @@ class Graph():
         best_cost = new_node.cost
         best_point = None
 
+        
+
         for i in range(len(nodes)):
             if i == new_node_index: 
                 continue # Do not consider the new node as a parent to itself
@@ -241,11 +234,15 @@ class Graph():
             for j in range(len(xs)): # Check each individual sample
                 distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
                 if distance <= search_radius:
-                    cost_to_candidate = nodes[candidate_node.parent].cost + (j+1)*delta*self.v # Cost to reach the candidate from the root
-                    candidate_cost = cost_to_candidate + distance
-                    if candidate_cost < best_cost:
-                        best_cost = candidate_cost
-                        best_point = (i,j)
+                    self.candidates_in_radius += 1
+                    if self.angle_difference(thetas[j], new_node.orientation) <= heading_boundary:
+                        cost_to_candidate = nodes[candidate_node.parent].cost + (j+1)*delta*abs(self.v) # Cost to reach the candidate from the root
+                        candidate_cost = cost_to_candidate + distance
+                        if candidate_cost < best_cost:
+                            best_cost = candidate_cost
+                            best_point = (i,j)
+                    elif self.angle_difference(thetas[j], new_node.orientation) > heading_boundary:
+                        self.candidates_blocked_by_heading +=1 ;
         
         if best_point is None: # A better route was NOT found
             return 
@@ -263,12 +260,10 @@ class Graph():
             new_node.parent = edge_index
             new_node.cost = best_cost
 
-            # Add init and final path point (NEW)
-            new_node.trajectory_samples = (
-                [xs[point_index], new_node.position[0]], 
-                [ys[point_index], new_node.position[1]],
-                [thetas[point_index], new_node.orientation]
-            )
+            # Add init and final path point 
+            interpolate_xs, interpolate_ys, interpolate_thetas = self.interpolate_connection(xs[point_index], ys[point_index], thetas[point_index], new_node.position[0], new_node.position[1], new_node.orientation, delta)
+            new_node.trajectory_samples = ([xs[point_index]] + interpolate_xs, [ys[point_index]]+ interpolate_ys, [thetas[point_index]]+ interpolate_thetas)
+
         else: 
             # Candidate is mid-edge. Split edge_node's edge, promoting a new node M
             point_x, point_y, point_theta = xs[point_index], ys[point_index], thetas[point_index]
@@ -277,7 +272,7 @@ class Graph():
                 position=(point_x, point_y),
                 orientation=point_theta,
                 parent=edge_node.parent,
-                cost=nodes[edge_node.parent].cost + (point_index+1)*delta*self.v,
+                cost=nodes[edge_node.parent].cost + (point_index+1)*delta*abs(self.v),
                 trajectory_samples=(xs[:point_index+1], ys[:point_index+1], thetas[:point_index+1])
             )
             nodes.append(M)
@@ -286,7 +281,7 @@ class Graph():
             # edge_node now starts from M instead of its old parent (edge splitting here)
             edge_node.parent = m_index
             edge_node.trajectory_samples = (xs[point_index+1:], ys[point_index+1:], thetas[point_index+1:])
-            edge_node.cost = M.cost + len(edge_node.trajectory_samples[0])*delta*self.v
+            edge_node.cost = M.cost + len(edge_node.trajectory_samples[0])*delta*abs(self.v)
 
             # Rewire new_node to promoted M
             new_node.parent = m_index
@@ -300,6 +295,34 @@ class Graph():
             )
         
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
+
+    def interpolate_connection(self, start_x, start_y, start_theta, end_x, end_y, end_theta, delta):
+        """
+        Interpolates a connection assuming a straight line between start_position and end_position. Purely for visualization.
+        PARAMETERS
+            start_x/y/theta : float (position: px/deg)
+            end_x/y/theta : float (position: px/deg)
+            delta : float
+        RETURNS xs, ys, thetas
+        """
+        distance = math.hypot(end_x - start_x, end_y - start_y)
+        spacing = abs(self.v)*delta # Px distance between points
+        steps = max(1, round(distance/spacing))
+        theta_difference = ((end_theta - start_theta) + 180) % 360 - 180 # Shortest angular path
+
+        xs,ys,thetas = [],[],[]
+
+        for i in range(1, steps+1):
+            frac = i/steps
+            xs.append(start_x + frac * (end_x - start_x))
+            ys.append(start_y + frac * (end_y - start_y))
+            thetas.append(start_theta + frac * theta_difference)
+
+        # Make sure the final sample matches the endpoint node
+        xs[-1],ys[-1],thetas[-1] = end_x, end_y, end_theta
+
+        return xs,ys,thetas
+
 
     def store_configuration(self, position, orientation):
         """
@@ -611,4 +634,10 @@ class Graph():
         fig.canvas.mpl_connect('key_press_event', on_key)
         plt.show()
 
-        
+    def angle_difference(self, theta_start, theta_end):
+        """
+        Smallest angular difference between two headings in degrees, accounting for wraparound at +-180. 
+        (e.g. 179 and -179 are 2 degrees apart, not 358).
+        """
+        diff = abs(theta_end - theta_start) % 360
+        return min(diff, 360-diff)

@@ -23,7 +23,7 @@ class TestRewireNode(unittest.TestCase):
     # Test if node is rewired if cost is cheaper after rewiring
     def test_mid_edge_rewire_and_split(self):
         root, node1 = self.make_root_and_edge()
-        rewired_node = Node(position=(4,0.5), orientation=0, parent=0, cost=8.0) # Node added close to node1 with purposefully high cost
+        rewired_node = Node(position=(4,0.5), orientation=0, parent=0, cost=100.0) # Node added close to other node with purposefully high cost
         nodes = [root, node1, rewired_node]
         self.graph.rewire_node(nodes, search_radius=1, delta=1) # search_radius = delta = 1 for easy arithmetic
 
@@ -81,3 +81,22 @@ class TestGoalReached(unittest.TestCase):
     
     def test_angle_wraparound(self):
         self.assertTrue(self.graph.is_goal_reached((100,100), -177))
+
+class TestAngleDifference(unittest.TestCase):
+    def setUp(self):
+        self.graph = Graph(start=(0,0,0), goal=(100,100, math.pi), map_dimensions=(640,480))
+        
+    def test_no_difference(self):
+        self.assertEqual(self.graph.angle_difference(45,45), 0)
+    
+    def test_simple_difference_no_wraparound(self):
+        self.assertEqual(self.graph.angle_difference(0,90), 90)
+    
+    def test_opposite_headings(self):
+        self.assertEqual(self.graph.angle_difference(0,180), 180)
+
+    def test_wraparound(self):
+        self.assertEqual(self.graph.angle_difference(179,-179), 2)
+
+    def test_order_does_not_matter(self):
+        self.assertEqual(self.graph.angle_difference(30,200), self.graph.angle_difference(200,30))

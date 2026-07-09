@@ -46,6 +46,17 @@ parser.add_argument('-stb', '--show_tree_building', type=bool,
 	help='Shows the simulation forward in time')
 parser.add_argument('-rad', '--search_radius', type=float, metavar='', required=False,
 	default=10, help='The search radius of the robot when deciding which node to rewire.')
+parser.add_argument('-hb', '--heading_boundary', type=float, metavar='', required=False,
+	default=180, help='The boundary of the heading difference which is used in rewiring..')
+parser.add_argument('-rw', '--rewire', type=bool, 
+	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
+	help='Rewires the tree nodes.')
+parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
+	help='Allowed position region of the pixels for the robot to reach the goal')
+parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=10,
+	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
+parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
+    metavar='', required=False, default='both', help='Which behavior triggers when anti_bias engages, v=0(stop), v=-v(reverse), or both (randomly picked).')
 args = parser.parse_args()
 
 # Initialization
@@ -68,7 +79,9 @@ robot = robot.Robot(start=args.x_init, robot_img=robot_images, length=0.01)
 graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
 
 def main():
-    run = True;
+    if args.seed is not None:
+        random.seed(42)
+    run = True
     clock = pygame.time.Clock()
 
     nodes = [Node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
@@ -79,6 +92,8 @@ def main():
     graph.orientation_boundary = args.orientation_boundary
     graph.show_tree_building = args.show_tree_building
     graph.delta = args.delta 
+    graph.anti_drive_bias = args.anti_drive_bias
+    graph.anti_drive_mode = args.anti_drive_mode
     graph.number_of_nodes = len(nodes)
     environment.make_obstacles()
 
@@ -125,7 +140,7 @@ def main():
                 nodes.append(new_node)
                 new_index = len(nodes) -1
 
-                assert new_node.cost > nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
+                assert new_node.cost >= nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
 
 
                 # Update sampled config (k)
@@ -133,7 +148,8 @@ def main():
                 k += 1
                 print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
-                graph.rewire_node(nodes=nodes, search_radius=args.search_radius, delta=args.delta)
+                if args.rewire: 
+                    graph.rewire_node(nodes=nodes, search_radius=args.search_radius, delta=args.delta, heading_boundary=args.heading_boundary)
             
             if args.show_new_configurations and args.show_tree_building:
                 # Draws a small rotated robot image at every node position added to the tree 
@@ -149,7 +165,8 @@ def main():
             pygame.display.update()
             environment.map.fill(environment.WHITE)
                         
-    print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}")
+    print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
+    print(f"[STATS] heading_boundary of {args.heading_boundary} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
 
     if graph.is_goal_found:
         graph.nodes = nodes # Attaches growing node list to graph.node
@@ -157,7 +174,26 @@ def main():
         graph.path_to_goal() 
         # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
         graph.get_path_coordinates()
+
+        flat_thetas = []
+        for segment in graph.theta_final_path[1:]:
+            flat_thetas.extend(segment)
         
+        jumps = []
+        for i in range(len(flat_thetas)-1):
+            current_theta = flat_thetas[i]
+            next_theta = flat_thetas[i+1]
+
+            jump = graph.angle_difference(current_theta, next_theta)
+            jumps.append(jump)
+
+        max_jump = max(jumps)
+        total_variation = sum(jumps)
+        avg_jump = total_variation/len(jumps)
+        physical_ceiling = math.degrees(0.5*args.delta)
+        print(f"[STATS] producing a final_path_cost={nodes[graph.goal_configuration].cost:.2f}")
+        print(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
+
     if not args.show_tree_building:
         environment.show_screen()
         graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
