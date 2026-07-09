@@ -59,12 +59,6 @@ class Environment():
     def store_trails(self):
         # Store the trails 
         self.trail_sets.append(self.trail_set)
-        
-    def compare(self, position):
-        # Given a position, find trails which end at that position and make them red.
-        for i in range(len(self.trail_sets)):
-            if self.trail_sets[i][-1] == position: #Checks if any trail ends at position
-                self.draw_trajectory_trail()
 
     #TODO: Possibly, make this only make the main trail red
     def draw_trajectory_trail(self):

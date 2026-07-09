@@ -5,7 +5,6 @@ import RRT
 import math
 import random
 import argparse
-import unittest
 import sys
 
 from node import Node

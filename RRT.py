@@ -1,7 +1,6 @@
 import pygame
 import random
 import math
-import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -79,68 +78,6 @@ class Graph():
             if obstacle.colliderect(configuration):
                 return False
         return True
-
-    # No longer used in node-sampling version
-    # def generate_random_node(self, bias):
-    #     """
-    #     Generates a random configuratin
-    #     PARAMETERS:
-    #         bias : int (Goal bias percentage)
-    #     RETURNS: 
-    #         tuple : coordinate of random node
-    #     """
-
-    #     #Sample a robot config in (x, y, theta)
-    #     self.x_rand = int(random.uniform(0, self.WIDTH)), int(random.uniform(0, self.HEIGHT)), math.radians(random.uniform(0, 360))
-
-    #     # Likelihood of goal bias 
-    #     bias_percentage = 10 - bias//10 if bias != 100 else 1
-
-    #     if self.iteration%bias_percentage == 0:
-    #         self.x_rand = self.x_goal
-        
-    #     return self.x_rand
-    
-    def metric(self, p1, p2):
-        """
-        Definition of the metric for a car (C = R^2 x S)
-        In other words: How far are p1 and p2?
-        PARAMETERS
-            p1 : int (Start configuration)
-            p2 : int (End configuration)
-        RETURNS
-            float (R^2 x S metric)
-        """
-
-        # Angle wraparound
-        theta = self.x_rand[2] #in rad
-        alpha = min(abs(self.last_orientation - theta), 2*math.pi - abs(self.last_orientation - theta))
-        
-        # Metric simplification through Euclidean formula (c^2 = a^2 + b^2)
-        return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + alpha**2)
-    
-    # No longer used in node-sampling version
-    # def nearest_neighbor(self, history, x_rand):
-    #     """
-    #     Returns the index of the nearest neighbor to randomly generated config (x_rand)
-    #     PARAMETERS
-    #         tree : list (Tree containing ALL configurations)
-    #         x_rand : tuple (x, y, and theta of random node generated)
-    #     RETURNS
-    #         tuple (Nearest node to random node generated)
-    #     """
-    #     distances = []
-
-    #     # Collect all the distances between each state and x-rand
-    #     for state in history:
-    #         distance = self.metric(state, x_rand)
-    #         distances.append(distance)
-
-    #     # Index of the minimum distance to x_rand
-    #     self.min_distance = np.argmin(distances)
-    #     x_near = history[self.min_distance]
-
-    #     return x_near
     
     def simulate(self, robot, environment, obstacles, random_parent_index):
         """
@@ -394,7 +331,6 @@ class Graph():
         # Append parent 0 (x_init)
         self.path.append(0)
 
-    # TODO: Issue with path generations. Only checks nodes which reside on edges. 
     def get_path_coordinates(self):
         """
         Collects correspondant coordinates
@@ -496,16 +432,6 @@ class Graph():
             None
         """
         pygame.draw.circle(surface=map, color=self.RED, center=self.x_goal[:2], radius=3)
-
-    def draw_random_node(self, map):
-        """
-        Draw the x_rand node on the map
-        PARAMETER
-            map : Environment object
-        RETURN
-            None
-        """
-        pygame.draw.circle(surface=map, color=self.GREEN, center=self.x_rand[:2], radius=3)
 
     def draw_new_node(self, map):
         """

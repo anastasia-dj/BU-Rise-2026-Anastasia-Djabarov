@@ -40,26 +40,6 @@ class Robot():
         # Draws the robot on a map.
         # Map: pygame.Surface
         map.blit(source=self.rotated, dest=self.rect)
-
-    def move(self, u=None):
-        # Move the img of the robot with a Euler assumption
-
-        # Establish the control input u
-        self.u1, self.u2 = u #u1 linear, u2 angular
-
-        # Car kinematic model
-        self.x += self.u1 * math.cos(math.radians(self.theta)) * self.dt # delta X
-        self.y -= self.u1 * math.sin(math.radians(self.theta)) * self.dt # delta Y
-        self.theta += self.u2 * self.dt
-
-        # Translation and rotation animation
-        self.rotated = pygame.transform.rotozoom(surface=self.img, angle=self.theta, scale=1);
-        self.rect = self.rotated.get_rect(center=(self.x, self.y)) # Update bounding rectangle
-
-        # Save history of points
-        self.x_position.append(self.x)
-        self.y_position.append(self.y)
-        self.theta_orientation.append(self.theta)
     
     def closed_form_step(self, x_init, y_init, theta_init, v, w, t):
         """
