@@ -64,20 +64,20 @@ class TestRewireNode(unittest.TestCase):
         self.assertEqual(rewired_node.parent, 1)
         self.assertAlmostEqual(rewired_node.cost, 5.5)
 
-    class TestGoalReached(unittest.TestCase):
-        def setUp(self):
-            self.graph = Graph(start=(0,0,0), goal=(100,100, math.pi), map_dimensions=(640,480))
-            self.graph.position_boundary = 10
-            self.graph.orientation_boundary = math.radians(10)
+class TestGoalReached(unittest.TestCase):
+    def setUp(self):
+        self.graph = Graph(start=(0,0,0), goal=(100,100, math.pi), map_dimensions=(640,480))
+        self.graph.position_boundary = 10
+        self.graph.orientation_boundary = math.radians(10)
 
-        def test_position_is_reached(self):
-            self.assertTrue(self.graph.is_goal_reached(100,100), math.degrees(math.pi))
-        
-        def test_position_is_not_reached(self):
-            self.assertFalse(self.graph.is_goal_reached(150,150), math.degrees(math.pi))
-        
-        def test_orientation_is_not_reached(self):
-            self.assertFalse(self.graph.is_goal_reached(100,100), 90)
-        
-        def test_angle_wraparound(self):
-            self.assertTrue(self.graph.is_goal_reached(100,100), -177)
+    def test_position_is_reached(self):
+        self.assertTrue(self.graph.is_goal_reached((100,100), math.degrees(math.pi)))
+    
+    def test_position_is_not_reached(self):
+        self.assertFalse(self.graph.is_goal_reached((150,150), math.degrees(math.pi)))
+    
+    def test_orientation_is_not_reached(self):
+        self.assertFalse(self.graph.is_goal_reached((100,100), 90))
+    
+    def test_angle_wraparound(self):
+        self.assertTrue(self.graph.is_goal_reached((100,100), -177))
