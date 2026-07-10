@@ -57,6 +57,7 @@ parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', require
 	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
 parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
     metavar='', required=False, default='both', help='Which behavior triggers when anti_bias engages, v=0(stop), v=-v(reverse), or both (randomly picked).')
+parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
 args = parser.parse_args()
 
 # Initialization
@@ -118,7 +119,7 @@ def main():
             environment.draw_trajectory_trail()
         
         # If the goal is not found
-        if not graph.is_goal_found:
+        if not graph.is_goal_found or not args.goal_end_program:
             # Find a random node
             random_parent_index = random.randint(0, len(nodes)-1)
 
@@ -158,7 +159,7 @@ def main():
                 graph.draw_new_node(map=environment.map)
 
             # if goal is found
-            if graph.is_goal_found:
+            if graph.is_goal_found and args.goal_end_program:
                 break # Stop growing 
 
             iteration += 1
@@ -169,6 +170,19 @@ def main():
     print(f"[STATS] heading_boundary of {args.heading_boundary} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
 
     if graph.is_goal_found:
+        goal_indices = []
+        for i, n in enumerate(nodes):
+            if graph.is_goal_reached(n.position, n.orientation):
+                goal_indices.append(i)
+        
+        min_cost = None
+        min_index = None
+        for i in goal_indices:
+            if min_cost is None or nodes[i].cost < min_cost:
+                min_cost = nodes[i].cost
+                min_index = i
+        
+        graph.goal_configuration = min_index    
         graph.nodes = nodes # Attaches growing node list to graph.node
         # Get the list of node IDs of the winning route
         graph.path_to_goal() 
