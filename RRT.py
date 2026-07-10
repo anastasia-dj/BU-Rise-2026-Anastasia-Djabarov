@@ -774,7 +774,7 @@ class Graph():
     
 
     
-    def log_results(self, file_name, heading_boundary, run_number, final_drift, cost):
+    def log_results(self, file_name, heading_boundary, run_number, avg_position_drift, avg_heading_drift, cost):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -790,6 +790,6 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["heading_boundary", "run_number", "final_drift", "cost"])
+                writer.writerow(["run_number", "heading_boundary", "avg_position_drift", "avg_heading_drift", "cost"])
                 file_exists = True
-            writer.writerow([heading_boundary, run_number, final_drift, cost])
+            writer.writerow([run_number, heading_boundary, avg_position_drift, avg_heading_drift, cost])

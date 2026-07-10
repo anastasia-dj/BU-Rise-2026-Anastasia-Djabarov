@@ -86,14 +86,13 @@ x_goal = args.x_goal
 # Creating environment/robot/RRT
 environment = environment.Environment(dimensions=MAP_DIMENSIONS, show_tree_building=args.show_tree_building, has_obstacles=args.obstacles)
 robot = robot.Robot(start=args.x_init, robot_img=robot_images, length=0.01)
-graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
-
 def main():
-    i = 0
+    s = 0
     while True:
+        graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
         if args.seed is not None:
             if args.repeat_program is True:
-                random.seed(i)
+                random.seed(s)
             else:
                 random.seed(args.seed)
         run = True
@@ -187,24 +186,29 @@ def main():
         graph.nodes = nodes # For path_from_nodes
         if args.reversibility_seed is not None:
                 if args.repeat_program is True:
-                    random.seed(i)
+                    random.seed(s)
                 else:
                     random.seed(args.reversibility_seed)
         
         shot_distances = 0.0
-        drifts = []
+        position_drifts = []
+        heading_drifts = []
         for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
             random_node_index = random.randint(1, len(nodes)-1)
             final_x,final_y,final_theta, shot_distance, n_shot_segments = graph.drive_backwards(random_node_index, robot, nodes)
-            drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1], final_theta - nodes[0].orientation)
-            drifts.append(drift)
-            print(f"[REVERSE] trial={trial}, start_node={random_node_index}, drift={drift:.6f}px"
-                f"shot_distance={shot_distance}px, n_shot_segments={n_shot_segments}")
+            position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
+            heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
+            position_drifts.append(position_drift)
+            heading_drifts.append(heading_drift)
+            print(f"[REVERSE] trial={trial}, start_node={random_node_index}, heading_drift={heading_drift:.6f}px\n"
+                f"position_drift = {position_drift}, shot_distance={shot_distance}px, n_shot_segments={n_shot_segments}")
             shot_distances += shot_distance
         
         avg_shot_distance = shot_distances/args.reversibility_trials
-        avg_drift = sum(drifts)/len(drifts)
-        print(f"[REVERSE] averages over {len(drifts)} trials: drift_from_final_goal={avg_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
+        avg_position_drift = sum(position_drifts)/len(position_drifts)
+        avg_heading_drift = sum(heading_drifts)/len(heading_drifts)
+        print(f"[REVERSE] POSITION - averages over {len(position_drifts)} trials: drift_from_final_goal={avg_position_drift:.6f}, shot_distance_from_goal={avg_shot_distance}"
+              f"[REVERSE] HEADING - averages over {len(heading_drifts)} trials: drift_from_final_goal={avg_heading_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
 
         if graph.is_goal_found:
             goal_indices = []
@@ -246,12 +250,12 @@ def main():
             print(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
 
             file_name = f"HeadingBound{args.heading_boundary}.csv"
-            graph.log_results(file_name=file_name, heading_boundary=args.heading_boundary, run_number=1, final_drift=sum(drifts)/len(drifts), cost=nodes[graph.goal_configuration].cost)
+            graph.log_results(file_name=file_name, heading_boundary=args.heading_boundary, run_number=s, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, cost=nodes[graph.goal_configuration].cost)
             
-            if not(args.repeat_program and i < args.repeat_program_num):
-                break
+        if not(args.repeat_program and s+1 < args.repeat_program_num):
+            break
+        s+=1
 
-            i+=1
     if args.repeat_program == False:
         if not args.show_tree_building:
             environment.show_screen()
