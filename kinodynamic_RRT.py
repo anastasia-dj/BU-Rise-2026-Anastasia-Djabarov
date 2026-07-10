@@ -6,6 +6,8 @@ import math
 import random
 import argparse
 import sys
+import csv
+import os 
 
 from node import Node
 
@@ -55,11 +57,13 @@ parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, defau
 	help='Seed of the random numbers taken.')
 parser.add_argument('-rsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
 	help='Seed for selecting which nodes get tested in the reversibility.')
-parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=10,
+parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=0,
 	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
 parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
     metavar='', required=False, default='both', help='Which behavior triggers when anti_bias engages, v=0(stop), v=-v(reverse), or both (randomly picked).')
 parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
+parser.add_argument('-rt', '--reversibility_trials', type=int, metavar='', required=False, default=30,
+	help='Number of reversibility trials to do..')
 args = parser.parse_args()
 
 # Initialization
@@ -146,7 +150,6 @@ def main():
 
                 assert new_node.cost >= nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
 
-
                 # Update sampled config (k)
                 graph.number_of_nodes = len(nodes)
                 k += 1
@@ -172,21 +175,25 @@ def main():
     print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
     print(f"[STATS] heading_boundary of {args.heading_boundary} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
 
-    # --- Reversibility test --- (independent on whether the goal was found or not)
+    # --- Reversibility test --- 
     graph.nodes = nodes # For path_from_nodes
     if args.reversibility_seed is not None:
             random.seed(args.reversibility_seed)
-
+    
+    shot_distances = 0.0
     drifts = []
-    for trial in range(30): # Test drift for 30 different nodes on the SAME tree
+    for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
         random_node_index = random.randint(1, len(nodes)-1)
-        final_x,final_y,final_theta = graph.drive_backwards(random_node_index, robot, nodes)
+        final_x,final_y,final_theta, shot_distance, n_shot_segments = graph.drive_backwards(random_node_index, robot, nodes)
         drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1], final_theta - nodes[0].orientation)
         drifts.append(drift)
-        print(f"[REVERSE] trial={trial}, start_node={random_node_index}, drift={drift:.6f}px")
+        print(f"[REVERSE] trial={trial}, start_node={random_node_index}, drift={drift:.6f}px"
+              f"shot_distance={shot_distance}px, n_shot_segments={n_shot_segments}")
+        shot_distances += shot_distance
+    
+    avg_shot_distance = shot_distances/args.reversibility_trials
     avg_drift = sum(drifts)/len(drifts)
-    print(f"[REVERSE] average drift over {len(drifts)} trials: {avg_drift:.6f}")
-
+    print(f"[REVERSE] averages over {len(drifts)} trials: drift_from_final_goal={avg_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
 
     if graph.is_goal_found:
         goal_indices = []
@@ -227,14 +234,13 @@ def main():
         print(f"[STATS] producing a final_path_cost={nodes[graph.goal_configuration].cost:.2f}")
         print(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
 
+
     if not args.show_tree_building:
         environment.show_screen()
         graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
         graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
         graph.draw_final_backdrop_2d(environment, nodes)
-        #environment.draw_trajectory_trail()
         pygame.display.update()
-        #pygame.time.delay(500)
 
         waiting_for_input = True
         while waiting_for_input:

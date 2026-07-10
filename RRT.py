@@ -1,10 +1,13 @@
 import pygame
 import random
 import math
+import csv
+import os 
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from node import Node
+
 
 
 class Graph():
@@ -268,12 +271,14 @@ class Graph():
         else: 
             # Candidate is mid-edge. Split edge_node's edge, promoting a new node M
             point_x, point_y, point_theta = xs[point_index], ys[point_index], thetas[point_index]
+            original_v, original_w, original_t = edge_node.control_input
 
             M = Node(
                 position=(point_x, point_y),
                 orientation=point_theta,
                 parent=edge_node.parent,
                 cost=nodes[edge_node.parent].cost + (point_index+1)*delta*abs(self.v),
+                control_input=(original_v, original_w, (point_index+1)*delta),
                 trajectory_samples=(xs[:point_index+1], ys[:point_index+1], thetas[:point_index+1])
             )
             nodes.append(M)
@@ -282,6 +287,7 @@ class Graph():
             # edge_node now starts from M instead of its old parent (edge splitting here)
             edge_node.parent = m_index
             edge_node.trajectory_samples = (xs[point_index+1:], ys[point_index+1:], thetas[point_index+1:])
+            edge_node.control_input = (original_v, original_w, len(edge_node.trajectory_samples[0])*delta)
             edge_node.cost = M.cost + len(edge_node.trajectory_samples[0])*delta*abs(self.v)
 
             # Rewire new_node to promoted M
@@ -674,7 +680,7 @@ class Graph():
     def draw_final_backdrop_2d(self, environment, nodes):
         self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
         if self.is_goal_found:
-            self.draw_final_path_2d(map=environment.map, color=environment.LIGHT_BROWN, width=3)
+            self.draw_final_path_2d(map=environment.map, color=environment.RED, width=1)
 
     def path_from_node_to_root(self, start_index):
         """
@@ -702,17 +708,87 @@ class Graph():
             start_index : int (Index of starting node)
             robot : Robot object
             nodes : Node 
+        RETURNS
+            x, y, theta(deg) : float
+            total_shot_distance : float (Total distance shot off from the goal)
+            n_shot_segments : int (Number of segments shot)
         """
         path_indices = self.path_from_node_to_root(start_index) # List of start_index -> root
         x = nodes[start_index].position[0]
         y = nodes[start_index].position[1]
         theta = math.radians(nodes[start_index].orientation)
+        
+        total_shot_distance = 0.0
+        n_shot_segments = 0
 
         for node_index in path_indices:
             if node_index == 0:
                 break # Root does not have a control input to reverse
-            v,w,t = nodes[node_index].control_input
-            x,y,theta = robot.closed_form_step(x,y,theta,-v,-w,t)
+            if nodes[node_index].control_input is not None:
+                v,w,t = nodes[node_index].control_input
+                x,y,theta = robot.closed_form_step(x,y,theta,-v,-w,t)
+            else: 
+                parent_index = nodes[node_index].parent
+                target_x,target_y = nodes[parent_index].position
+                (x,y,theta), shot_distance = self.shoot_toward_target(robot,x,y,theta,target_x,target_y)
+                total_shot_distance += shot_distance
+                n_shot_segments +=1
 
-        return x,y,math.degrees(theta)
+        return x,y,math.degrees(theta), total_shot_distance, n_shot_segments
         
+    def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, n_shots = 1000):
+        """
+        When given an initial point and target point, this function loops random control inputs for a fixed amount of trials
+        and selects the end point which lands closest to the target.
+        PARAMETERS
+            robot : Robot object
+            x0, y0, theta0 : float (Initial position)
+            target_x, target_y : float (Goal position)
+            n_shots : int (Number of trials)
+        RETURNS
+            best_configuration : tuple (x1, y1, theta1) of closest ending position
+            best_distance : The best distance between the actual end point and target point
+        """
+        
+        best_distance = None
+        best_configuration = None
+        for _ in range(n_shots):
+            if random.uniform(0, 100) < self.anti_drive_bias:
+                if self.anti_drive_mode == 'stop':
+                    v = 0
+                elif self.anti_drive_mode == 'reverse':
+                    v = -self.v_magnitude
+                else:
+                    v = random.choice([0, -self.v_magnitude])
+            else:
+                v = self.v_magnitude
+            w = random.uniform(-0.5, 0.5)
+            t = random.uniform(0.5, 4)
+
+            x1,y1,theta1 = robot.closed_form_step(x0, y0, theta0, v, w, t)
+            distance = math.hypot(x1-target_x, y1-target_y)
+            if best_distance is None or distance < best_distance:
+                best_distance, best_configuration = distance, (x1, y1, theta1)
+        
+        return best_configuration, best_distance
+    
+    def log_results(self, file_name, heading_boundary, run_number, final_drift, max_theta_jump, avg_theta_jump, cost):
+        """
+        Append a run's worth of data into a csv file.
+        PARAMETERS:
+            file_name : str (Path to CSV file)
+            heading_boundary : int (Current heading boundary being tested)
+            run_number : int (Current run of heading_boundary (NOT inner iteration of reversibility))
+            final_drift : float (The final drift average from the goal)
+            max_theta_jump : float (The max theta jump)
+            average_theta_jump : float (The average theta jump)
+            cost : float (The cost between the initial and goal positions)
+        """
+        file_exists = os.path.isfile(file_name)
+        with open(file_name, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.write.row(["heading_boundary", "run_number", "final_drift", "max_theta_jump", "avg_theta_jump", "cost"])
+                file_exists = True
+            
+            writer.writerow([heading_boundary, run_number, final_drift, max_theta_jump, avg_theta_jump, cost])
