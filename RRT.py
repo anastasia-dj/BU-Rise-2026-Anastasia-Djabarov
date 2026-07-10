@@ -772,11 +772,13 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def log_results(self, file_name, heading_boundary, run_number, final_drift, max_theta_jump, avg_theta_jump, cost):
+
+    
+    def log_results(self, file_name, heading_boundary, run_number, final_drift, cost):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
-            file_name : str (Path to CSV file)
+            file_name : str (Name of CSV file)
             heading_boundary : int (Current heading boundary being tested)
             run_number : int (Current run of heading_boundary (NOT inner iteration of reversibility))
             final_drift : float (The final drift average from the goal)
@@ -788,7 +790,6 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.write.row(["heading_boundary", "run_number", "final_drift", "max_theta_jump", "avg_theta_jump", "cost"])
+                writer.writerow(["heading_boundary", "run_number", "final_drift", "cost"])
                 file_exists = True
-            
-            writer.writerow([heading_boundary, run_number, final_drift, max_theta_jump, avg_theta_jump, cost])
+            writer.writerow([heading_boundary, run_number, final_drift, cost])
