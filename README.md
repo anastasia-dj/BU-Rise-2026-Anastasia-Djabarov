@@ -64,12 +64,29 @@ The core design decisions (so far) were suggested by Professor Tron and adopted 
 <a id="issue-2"></a>
 2. ~~Previous path extraction (`get_path_coordinates()`) currently matches path nodes to edges by checking for an exact endpoint match with the successful path. This fails for two reasons: (a) nodes created via mid-edge rewiring aren't stored at the end of an edge, and (b) `generate_arc_samples()` truncates to floor(t/delta) steps while the real node is computed using the full, untruncated edge_time_duration. In both cases, the sample essentially does not match the node's true coordinates for many nodes.~~ **Resolved.** (a) is fixed by the Node refactor. Every node, including ones created via mid-edge rewiring, stores its own trajectory directly, so path extraction reads it off the node instead of searching for an edge endpoint match. (b) was fixed separately by manually having `generate_arc_samples()` append the true, untruncated endpoint as its final sample. 
 <a id="issue-3"></a>
-3. Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Solving for the w and t that would truly connect the two configurations has not yet been implemented, so rewiring decisions are based on an approximation and not currently verified against a real simulated connecting arc. 
+3. Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Solving for the w and t that would truly connect the two configurations has not yet been implemented, so rewiring decisions are based on an approximation and not currently verified against a real simulated connecting arc. **Note:** This is currently being worked on by implementing a heading bound, which prevents rewires between two nodes with drastic heading differences.
 <a id="issue-4"></a>
 4. ~~Currently, checking for a collision only includes the initial and final position. This does not account for the possibility that an obstacle may be between the initial and final positions.~~ **Resolved.** Within `simulate()`, the algorithm now cycles through `xs_samples`, `ys_samples`, and `thetas_samples`, checking each sampled pose for collisions to verify that the entire path is collision-free.
 <a id="issue-5"></a>
-5. Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all.
+5. Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all. **Note:** This is currently being worked on by implementing a heading bound, which prevents rewires between two nodes with drastic heading differences.
 <a id="issue-6"></a>
 6. ~~The 3D plot for simulations that do reach the goal shows incomplete portions and visible "jumps" between segments of the path. The suspected cause is from a missed update of .trajectory_samples.~~ **Resolved.** In `rewire_node()`​, the `trajectory_samples`​ for the promoted node and for the node on the edge containing it were being updated, but the `trajectory_samples​` of the node being rewired itself were not, resulting in a gap. This was fixed by adding the new parent's configuration and the node's own configuration to `trajectory_samples`,​ and by switching the 3D plot from `ax.scatter​` to `ax.plot`​ so these two points create a continuous line.
 <a id="issue-7"></a>
 7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=1. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. 
+
+
+# TODO:
+- Change the visualization so that it shows all the branches and the successful branch. (Maybe make the unsuccessful branches less visible)
+
+__FUNDAMENTAL QUESTION: Can we generate a tree and then follow it backwards?__
+
+__IMMEDIATE GOALS__
+1) GOAl 1: Go backwards. The robot is randomly sampled on a node. Using the control inputs stored throughout the path, go backwards and see if you make it back to the initial position. Run this ~30 times and take the average of the distance from x_init. For this initial assumption, I assumed the robot can turn in a circle in place. 
+2) GOAl 2: Go backwards with the shortest path. Add hb -20 and see how it changes. Record path cost and distance x_init.
+
+__BRANCH DENSITY__
+- When you decide from which to node to try to grow the tree, you are essentially picking uniformly. Older nodes have more chances to be taken just because they have been around longer. One standard trick is to change the probability of picking a node is proportaionality inverse to the number of children it has.
+- To decide branch density, just eyeball it. No numeric standardization exists. 
+
+__ROBOT NOT ON NODE__
+- Later

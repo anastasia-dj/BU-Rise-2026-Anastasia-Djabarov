@@ -67,6 +67,7 @@ class Graph():
         self.GREEN = (0, 255, 0)
         self.BLUE = (0, 0, 255)
         self.BROWN = (189, 154, 122)
+        self.LIGHT_BROWN = (222, 184, 135)
 
     def is_free(self, configuration, obstacles):
         """
@@ -584,7 +585,19 @@ class Graph():
         if self.is_goal_found:
             # Graph successful points
             for i in range(len(self.x_final_path)):
-                ax.plot(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='brown', marker='.', markersize=2)
+                ax.plot(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='red', marker='.', markersize=2)
+
+            # Build parent -> child branches as one line, with None to break segments
+            branch_x, branch_y, branch_theta = [], [], []
+            for i, n in enumerate(nodes):
+                if i == 0:
+                    continue # The root's parent is itself so skip this 
+                parent = nodes[n.parent]
+                branch_x += [n.position[0], parent.position[0], float('nan')]
+                branch_y += [n.position[1], parent.position[1], float('nan')]
+                branch_theta += [n.orientation, parent.orientation, float('nan')]
+            branch_line, = ax.plot(branch_x, branch_y, branch_theta, alpha=0.7, color='brown', linewidth=0.5, visible=False)
+
             title = 'kRRT Final Path'
         else:
             # Plot all the nodes
@@ -636,9 +649,70 @@ class Graph():
         plt.show()
 
     def angle_difference(self, theta_start, theta_end):
-        """
-        Smallest angular difference between two headings in degrees, accounting for wraparound at +-180. 
-        (e.g. 179 and -179 are 2 degrees apart, not 358).
-        """
+        #Smallest angular difference between two headings in degrees, accounting for wraparound at +-180. 
+        #(e.g. 179 and -179 are 2 degrees apart, not 358).
+        
         diff = abs(theta_end - theta_start) % 360
         return min(diff, 360-diff)
+
+    def draw_final_all_branches_2d(self, map, nodes, color, width=1):
+        # Draws all the branches faded.
+        for n in nodes:
+            if n.trajectory_samples is not None:
+                xs,ys,thetas = n.trajectory_samples
+                points = list(zip(xs, ys))
+                if len(points) >= 2:
+                    pygame.draw.lines(surface=map, color=color, closed=False, points=points, width=width)
+
+    def draw_final_path_2d(self, map, color, width=1):
+        # Draws the succesful branch solid
+        for i in range(1, len(self.x_final_path)):
+            points = list(zip(self.x_final_path[i],self.y_final_path[i]))
+            if len(points) >= 2:
+                    pygame.draw.lines(surface=map, color=color, closed=False, points=points, width=width)
+
+    def draw_final_backdrop_2d(self, environment, nodes):
+        self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
+        if self.is_goal_found:
+            self.draw_final_path_2d(map=environment.map, color=environment.LIGHT_BROWN, width=3)
+
+    def path_from_node_to_root(self, start_index):
+        """
+        Given any node, this function walks back the .parent references until it reaches the root. (start_index --> root) 
+        This is essentially a generalized version of path_to_goal().
+        PARAMETERS
+            self_index : int (Index of the starting node)
+        RETURN
+            list of node indices, from start_index --> root
+        """
+
+        path = [start_index]
+        current_parent = self.nodes[start_index].parent
+        while current_parent != 0:
+            path.append(current_parent)
+            current_parent = self.nodes[current_parent].parent
+        path.append(0)
+        return path
+
+    def drive_backwards(self, start_index, robot, nodes):
+        """
+        Given any node, this function calculates the reversed control_input and returns the position which the robot
+        ended up in after following the reversed control_input. 
+        PARAMETERS
+            start_index : int (Index of starting node)
+            robot : Robot object
+            nodes : Node 
+        """
+        path_indices = self.path_from_node_to_root(start_index) # List of start_index -> root
+        x = nodes[start_index].position[0]
+        y = nodes[start_index].position[1]
+        theta = math.radians(nodes[start_index].orientation)
+
+        for node_index in path_indices:
+            if node_index == 0:
+                break # Root does not have a control input to reverse
+            v,w,t = nodes[node_index].control_input
+            x,y,theta = robot.closed_form_step(x,y,theta,-v,-w,t)
+
+        return x,y,math.degrees(theta)
+        

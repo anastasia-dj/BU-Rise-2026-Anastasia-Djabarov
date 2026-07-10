@@ -20,6 +20,7 @@ class Environment():
         self.GREEN = (0, 255, 0)
         self.BLUE = (0, 0, 255)
         self.BROWN = (189, 154, 122)
+        self.LIGHT_BROWN = (222, 184, 135)
 
         self.has_obstacles = has_obstacles
         self.trail_set = [] # Holds tuple positions of one current ongoing trail

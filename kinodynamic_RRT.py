@@ -53,6 +53,8 @@ parser.add_argument('-rw', '--rewire', type=bool,
 	help='Rewires the tree nodes.')
 parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
 	help='Seed of the random numbers taken.')
+parser.add_argument('-rsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
+	help='Seed for selecting which nodes get tested in the reversibility.')
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=10,
 	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
 parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
@@ -136,6 +138,7 @@ def main():
                     orientation=theta_new,
                     parent=random_parent_index,
                     cost=nodes[random_parent_index].cost + graph.edge_time_duration*abs(graph.v),
+                    control_input=(graph.v, graph.w, graph.edge_time_duration),
                     trajectory_samples=trajectory_samples
                 )
                 nodes.append(new_node)
@@ -168,6 +171,22 @@ def main():
                         
     print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
     print(f"[STATS] heading_boundary of {args.heading_boundary} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
+
+    # --- Reversibility test --- (independent on whether the goal was found or not)
+    graph.nodes = nodes # For path_from_nodes
+    if args.reversibility_seed is not None:
+            random.seed(args.reversibility_seed)
+
+    drifts = []
+    for trial in range(30): # Test drift for 30 different nodes on the SAME tree
+        random_node_index = random.randint(1, len(nodes)-1)
+        final_x,final_y,final_theta = graph.drive_backwards(random_node_index, robot, nodes)
+        drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1], final_theta - nodes[0].orientation)
+        drifts.append(drift)
+        print(f"[REVERSE] trial={trial}, start_node={random_node_index}, drift={drift:.6f}px")
+    avg_drift = sum(drifts)/len(drifts)
+    print(f"[REVERSE] average drift over {len(drifts)} trials: {avg_drift:.6f}")
+
 
     if graph.is_goal_found:
         goal_indices = []
@@ -212,9 +231,17 @@ def main():
         environment.show_screen()
         graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
         graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-        environment.draw_trajectory_trail()
+        graph.draw_final_backdrop_2d(environment, nodes)
+        #environment.draw_trajectory_trail()
         pygame.display.update()
-        pygame.time.delay(500)
+        #pygame.time.delay(500)
+
+        waiting_for_input = True
+        while waiting_for_input:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN or event.type == pygame.QUIT:
+                    waiting_for_input = False
+            pygame.display.update()
 
     if graph.is_goal_found:
         # Display such and such

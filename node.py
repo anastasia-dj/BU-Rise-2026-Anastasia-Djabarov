@@ -9,9 +9,10 @@ class Node():
 
     """
     
-    def __init__(self, position, orientation, parent, cost, trajectory_samples=None):
+    def __init__(self, position, orientation, parent, cost, control_input=None, trajectory_samples=None):
         self.position = position
         self.orientation = orientation
         self.parent = parent
         self.cost = cost
+        self.control_input = control_input
         self.trajectory_samples = trajectory_samples
