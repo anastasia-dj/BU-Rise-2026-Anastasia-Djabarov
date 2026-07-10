@@ -73,20 +73,3 @@ The core design decisions (so far) were suggested by Professor Tron and adopted 
 6. ~~The 3D plot for simulations that do reach the goal shows incomplete portions and visible "jumps" between segments of the path. The suspected cause is from a missed update of .trajectory_samples.~~ **Resolved.** In `rewire_node()`​, the `trajectory_samples`​ for the promoted node and for the node on the edge containing it were being updated, but the `trajectory_samples​` of the node being rewired itself were not, resulting in a gap. This was fixed by adding the new parent's configuration and the node's own configuration to `trajectory_samples`,​ and by switching the 3D plot from `ax.scatter​` to `ax.plot`​ so these two points create a continuous line.
 <a id="issue-7"></a>
 7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=1. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. 
-
-
-# TODO:
-- Change the visualization so that it shows all the branches and the successful branch. (Maybe make the unsuccessful branches less visible)
-
-__FUNDAMENTAL QUESTION: Can we generate a tree and then follow it backwards?__
-
-__IMMEDIATE GOALS__
-1) GOAl 1: Go backwards. The robot is randomly sampled on a node. Using the control inputs stored throughout the path, go backwards and see if you make it back to the initial position. Run this ~30 times and take the average of the distance from x_init. For this initial assumption, I assumed the robot can turn in a circle in place. 
-2) GOAl 2: Go backwards with the shortest path. Add hb -20 and see how it changes. Record path cost and distance x_init.
-
-__BRANCH DENSITY__
-- When you decide from which to node to try to grow the tree, you are essentially picking uniformly. Older nodes have more chances to be taken just because they have been around longer. One standard trick is to change the probability of picking a node is proportaionality inverse to the number of children it has.
-- To decide branch density, just eyeball it. No numeric standardization exists. 
-
-__ROBOT NOT ON NODE__
-- Later
