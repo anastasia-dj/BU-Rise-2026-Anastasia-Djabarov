@@ -8,8 +8,6 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from node import Node
 
-
-
 class Graph():
     """
     Class for RRT
@@ -693,6 +691,7 @@ class Graph():
         n_hops = 0
         arrived_at_goal = False
         total_path_cost = 0.0
+        last_used_index = None
         
         for step in range(max_steps):
             # Reached goal
@@ -700,7 +699,7 @@ class Graph():
                 arrived_at_goal = True
                 return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'reached_root'
             
-            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, root_index)
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, root_index, exclude_index=last_used_index)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
@@ -721,7 +720,7 @@ class Graph():
 
             for k in range(1, steps_in_edge+1):
                 x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
-                mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, root_index)
+                mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, root_index, exclude_index=index)
 
                 if mid_found is not None and mid_found[1] < cost:
                     x, y, theta = x_new, y_new, theta_new
@@ -734,7 +733,8 @@ class Graph():
                 total_path_cost += t*abs(v)
             else: 
                 total_path_cost += k *self.delta * abs(v)
-
+            
+            last_used_index = index
             n_hops += 1
             previous_cost = cost 
         
@@ -771,7 +771,7 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, root_index):
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, root_index, exclude_index=None):
         """
         Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
         The root is not included.
@@ -783,7 +783,7 @@ class Graph():
         """
         best = None
         for i, n in enumerate(nodes):
-            if i == root_index:
+            if i == root_index or i == exclude_index:
                 continue # Exclude the root index
             distance = math.hypot(n.position[0]-x, n.position[1]-y)
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:

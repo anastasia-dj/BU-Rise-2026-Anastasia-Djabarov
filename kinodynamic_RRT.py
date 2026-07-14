@@ -75,7 +75,6 @@ parser.add_argument('-rwradl', '--rewire_search_radius_list', nargs='+', type=fl
     default=None, help='List of search_radius values to sweep automatically: e.g. -radl 1 5 10 15')
 parser.add_argument('-stw', '--shot_theta_weight', type=float, metavar='', required=False, default=0.0,
     help='Weight applied to heading mismatch when picking the best shot, 0 = position-only (original behavior).')
-args = parser.parse_args()
 
 # Reversibility configurations
 parser.add_argument('-rvhb', '--reverse_heading_boundary', type=float, metavar='', required=False,
@@ -88,6 +87,8 @@ parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', requi
 	help='Seed for selecting which nodes get tested in the reversibility.')
 parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node', 'map', 'tree_box'], 
     metavar='', required=False, default='node', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
+
+args = parser.parse_args()
 
 # Initialization
 pygame.init()
@@ -108,7 +109,7 @@ environment = environment.Environment(dimensions=MAP_DIMENSIONS, show_tree_build
 robot = robot.Robot(start=args.x_init, robot_img=robot_images, length=0.01)
 def main():
     rewire_heading_boundaries_to_test = args.rewire_heading_boundary_list if args.rewire_heading_boundary_list is not None else [args.rewire_heading_boundary]
-    rewire_search_radii_to_test = args.rewire_search_radius_list if args.rewire_search_radius_list is not None else [args.search_radius]
+    rewire_search_radii_to_test = args.rewire_search_radius_list if args.rewire_search_radius_list is not None else [args.rewire_search_radius]
 
 
     for rwhb in rewire_heading_boundaries_to_test:
@@ -257,11 +258,12 @@ def main():
                     else:
                         failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
 
-                avg_position_drift = sum(position_drifts)/len(position_drifts) if avg_position_drift else None
+                avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
+                avg_position_drift = sum(position_drifts)/len(position_drifts) if position_drifts else None
                 success_rate = successes/args.reversibility_trials
                 avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
-                avg_total_path_costs = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
-                print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_costs}")
+                avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
+                print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                 print("[REVERSE] failure breakdown:")
                 for reason, count in failure_reasons.items():
                     print(f"    {reason}: {count}")
