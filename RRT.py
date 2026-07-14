@@ -207,7 +207,7 @@ class Graph():
 
             return self.x_new, self.theta_new, trajectory_samples
     
-    def rewire_node(self, nodes, search_radius, delta, heading_boundary):
+    def rewire_node(self, nodes, search_radius, delta, heading_boundary, robot):
         """
         Within a search radius, it finds the position (not strictly a node) with the lowest cost and copies the position's control input and cost to the new node.
         PARAMETERS
@@ -224,7 +224,7 @@ class Graph():
         new_node_index = len(nodes)-1
         new_node = nodes[new_node_index]
         best_cost = new_node.cost
-        best_point = None # (candidate_node_index, sample_index_j, candidate_v, candidate_w)
+        best_choice = None # (candidate_node_index, sample_index_j, candidate_v, candidate_w)
 
         for i in range(len(nodes)):
             if i == new_node_index: 
@@ -240,14 +240,14 @@ class Graph():
                     self.candidates_in_radius += 1
                     if self.angle_difference(thetas[j], new_node.orientation) <= heading_boundary:
                         # Cost as if new_node were sample j of candidate_node's edge
-                        candidate_cost = nodes[candidate_node.parent].cost + (j+1)*delta*abs(self.v) 
+                        candidate_cost = nodes[candidate_node.parent].cost + (j+1)*delta*abs(candidate_v) 
                         if candidate_cost < best_cost:
                             best_cost = candidate_cost
                             best_choice = (i,j, candidate_v, candidate_w)
                     else:
                         self.candidates_blocked_by_heading +=1 ;
         
-        if best_point is None: # A better route was NOT found
+        if best_choice is None: # A better route was NOT found
             return 
         
         # Record old parent and old cost before reassignment (DEBUGGING)
@@ -260,7 +260,14 @@ class Graph():
 
         new_node.parent = candidate_node.parent # Make new_node the sibling of the parent
         new_node.control_input = (candidate_v, candidate_w, candidate_t)
-       
+        new_node.cost = best_cost
+
+        assert new_node.cost >= nodes[new_node.parent].cost, "[ERROR] Post-wire cost inconsistency with child cost ({new_node.cost}) >= parent cost ({nodes[new_node.parent].cost})"
+
+        parent_node = nodes[new_node.parent]
+        xs,ys,thetas_rad = robot.generate_arc_samples(parent_node.position[0], parent_node.position[1], math.radians(parent_node.orientation), candidate_v, candidate_w, candidate_t, delta)
+        new_node.trajectory_samples = (xs,ys,[math.degrees(t) for t in thetas_rad])
+
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
     # NOTE: May be retired soon. 

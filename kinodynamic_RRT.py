@@ -176,7 +176,7 @@ def main():
                             print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
                             if args.rewire: 
-                                graph.rewire_node(nodes=nodes, search_radius=rad, delta=args.delta, heading_boundary=hb)
+                                graph.rewire_node(nodes=nodes, search_radius=rad, delta=args.delta, heading_boundary=hb, robot=robot)
                         
                         if args.show_new_configurations and args.show_tree_building:
                             # Draws a small rotated robot image at every node position added to the tree 
@@ -194,6 +194,9 @@ def main():
                                     
                 print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
                 print(f"[STATS] heading_boundary of {hb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
+
+                none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0])
+                print(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
 
                 # --- Reversibility test --- 
                 graph.nodes = nodes # For path_from_nodes
@@ -236,7 +239,7 @@ def main():
                 avg_position_drift = sum(position_drifts)/len(position_drifts)
                 avg_heading_drift = sum(heading_drifts)/len(heading_drifts)
                 print(f"[REVERSE] POSITION - averages over {len(position_drifts)} trials: drift_from_final_goal={avg_position_drift:.6f}, shot_distance_from_goal={avg_shot_distance}"
-                    f"[REVERSE] HEADING - averages over {len(heading_drifts)} trials: drift_from_final_goal={avg_heading_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
+                    f"\n[REVERSE] HEADING - averages over {len(heading_drifts)} trials: drift_from_final_goal={avg_heading_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
 
                 if graph.is_goal_found:
                     goal_indices = []
@@ -257,6 +260,17 @@ def main():
                     graph.path_to_goal() 
                     # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
                     graph.get_path_coordinates()
+
+                    for index in range(len(graph.path)-1, 0, -1):
+                        node = nodes[graph.path[index]]
+                        parent = nodes[graph.path[index-1]]
+                        print(f"[DEBUG] Checking node {graph.path[index]}")
+                        print(f"[DEBUG] for trajectory_samples: type={type(node.trajectory_samples)}, contents={node.trajectory_samples}")
+                        if node.trajectory_samples is not None:
+                            first_x, first_y = node.trajectory_samples[0][0], node.trajectory_samples[1][0]
+                            gap = math.hypot(first_x - parent.position[0][0], first_y - parent.position[1][0])
+                            if gap > 1.0:
+                                print(f"[MISMATCH] Mismatch at node {graph.path[index]}. The trajectory begins {gap} px from parent {graph.path[index-1]}")
 
                     flat_thetas = []
                     for segment in graph.theta_final_path[1:]:
