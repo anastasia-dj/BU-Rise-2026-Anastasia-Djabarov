@@ -264,13 +264,13 @@ def main():
                     for index in range(len(graph.path)-1, 0, -1):
                         node = nodes[graph.path[index]]
                         parent = nodes[graph.path[index-1]]
-                        print(f"[DEBUG] Checking node {graph.path[index]}")
-                        print(f"[DEBUG] for trajectory_samples: type={type(node.trajectory_samples)}, contents={node.trajectory_samples}")
-                        if node.trajectory_samples is not None:
-                            first_x, first_y = node.trajectory_samples[0][0], node.trajectory_samples[1][0]
-                            gap = math.hypot(first_x - parent.position[0][0], first_y - parent.position[1][0])
+                        if node.trajectory_samples is not None and node.control_input is not None:
+                            v,w,t = node.control_input
+                            expected_x,expected_y,expected_theta = robot.closed_form_step(parent.position[0], parent.position[1], math.radians(parent.orientation), v, w, t)
+                            last_x, last_y = node.trajectory_samples[0][-1], node.trajectory_samples[1][-1]
+                            gap = math.hypot(last_x - expected_x, last_y - expected_y)
                             if gap > 1.0:
-                                print(f"[MISMATCH] Mismatch at node {graph.path[index]}. The trajectory begins {gap} px from parent {graph.path[index-1]}")
+                                print(f"[MISMATCH] Mismatch at node {graph.path[index]}. The trajectory begins {gap:.2f} px from parent {graph.path[index-1]}")
 
                     flat_thetas = []
                     for segment in graph.theta_final_path[1:]:
