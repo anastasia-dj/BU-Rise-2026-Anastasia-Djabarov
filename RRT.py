@@ -737,7 +737,8 @@ class Graph():
 
             n_hops += 1
             previous_cost = cost 
-            return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'max_steps_exceeded'
+        
+        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'max_steps_exceeded'
 
     # NOTE: RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
@@ -795,23 +796,25 @@ class Graph():
         root = nodes[root_index]
         return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
     
-    def log_results(self, file_name, heading_boundary, rewire_search_radius, run_number, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials):
+    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
             file_name : str (Name of CSV file)
-            heading_boundary : int (Current heading boundary being tested)
-            run_number : int (Current run of heading_boundary (NOT inner iteration of reversibility))
-            final_drift : float (The final drift average from the goal)
-            max_theta_jump : float (The max theta jump)
-            average_theta_jump : float (The average theta jump)
-            cost : float (The cost between the initial and goal positions)
+            rewire_heading_boundary, rewire_search_radius : float (configurable values for rewiring)
+            reverse_heading_boundary, reverse_search_radius : float (configurable values for reverse)
+            run_number : int
+            success_rate : float (fraction of reversibility trials that reached root)
+            avg_position_drft, avg_heading_drift : float (averaged over a configurable number of successful trials)
+            avg_hops_on_success : float (average real hops taken on successful trials)
+            avg_total_path_cost : float (average true cost that was driven)
+            cost : float (the tree's cost of the TREE'S path. not the robot's)
         """
         file_exists = os.path.isfile(file_name)
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "heading_boundary", "rewire_search_radius", "avg_position_drift", "avg_heading_drift", "avg_n_shot_segments", "cost", "avg_first_shot_miss", "avg_last_shot_miss", "avg_max_shot_miss", "n_multi_shot_trials"])
+                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost"])
                 file_exists = True
-            writer.writerow([run_number, heading_boundary, rewire_search_radius, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials])
+            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost])
 

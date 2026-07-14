@@ -107,12 +107,12 @@ x_goal = args.x_goal
 environment = environment.Environment(dimensions=MAP_DIMENSIONS, show_tree_building=args.show_tree_building, has_obstacles=args.obstacles)
 robot = robot.Robot(start=args.x_init, robot_img=robot_images, length=0.01)
 def main():
-    heading_boundaries_to_test = args.heading_boundary_list if args.heading_boundary_list is not None else [args.heading_boundary]
+    rewire_heading_boundaries_to_test = args.rewire_heading_boundary_list if args.rewire_heading_boundary_list is not None else [args.rewire_heading_boundary]
     rewire_search_radii_to_test = args.rewire_search_radius_list if args.rewire_search_radius_list is not None else [args.search_radius]
 
 
-    for rwhb in heading_boundaries_to_test:
-        for rad in rewire_search_radii_to_test:
+    for rwhb in rewire_heading_boundaries_to_test:
+        for rwrad in rewire_search_radii_to_test:
             s = 0
             while True:
                 graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
@@ -190,7 +190,7 @@ def main():
                             print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
                             if args.rewire: 
-                                graph.rewire_node(nodes=nodes, rewire_search_radius=rad, delta=args.delta, heading_boundary=rwhb, robot=robot)
+                                graph.rewire_node(nodes=nodes, rewire_search_radius=rwrad, delta=args.delta, heading_boundary=rwhb, robot=robot)
                         
                         if args.show_new_configurations and args.show_tree_building:
                             # Draws a small rotated robot image at every node position added to the tree 
@@ -223,6 +223,7 @@ def main():
                 hops_for_reached_root_trials = []
                 total_path_costs = []
                 position_drifts = []
+                heading_drifts = []
 
                 for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
                     # Get the robot's starting position
@@ -242,7 +243,8 @@ def main():
                         start_theta_deg = random.uniform(0,360)
 
                     success, final_x, final_y, final_theta, n_hops, total_path_cost, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=args.reverse_search_radius, reverse_heading_boundary=args.reverse_heading_boundary, position_threshold=args.position_boundary)                
-                    position_drift = math.hypot(final_x - node[0].position[0], final_y - node[0].position[1])
+                    position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
+                    heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
 
                     print(f"[REVERSE] trial={trial}, spawn_mode={args.reverse_spawn_mode}, success={success}, reason={reason}, hops={n_hops}, cost={total_path_cost}, drift={position_drift}")
 
@@ -251,10 +253,11 @@ def main():
                         hops_for_reached_root_trials.append(n_hops)
                         total_path_costs.append(total_path_cost)
                         position_drifts.append(position_drift)
+                        heading_drifts.append(heading_drift)
                     else:
                         failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
 
-                avg_position_drift = sum(position_drifts)/len(position_drifts) if avg_position_drft else Nona
+                avg_position_drift = sum(position_drifts)/len(position_drifts) if avg_position_drift else None
                 success_rate = successes/args.reversibility_trials
                 avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
                 avg_total_path_costs = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
@@ -285,18 +288,6 @@ def main():
                     # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
                     graph.get_path_coordinates()
 
-                    # Check for trajectory jumps
-                    for index in range(len(graph.path)-1, 0, -1):
-                        node = nodes[graph.path[index-1]]
-                        parent = nodes[graph.path[index]]
-                        if node.trajectory_samples is not None and node.control_input is not None:
-                            v,w,t = node.control_input
-                            expected_x,expected_y,expected_theta = robot.closed_form_step(parent.position[0], parent.position[1], math.radians(parent.orientation), v, w, t)
-                            last_x, last_y = node.trajectory_samples[0][-1], node.trajectory_samples[1][-1]
-                            gap = math.hypot(last_x - expected_x, last_y - expected_y)
-                            if gap > 1.0:
-                                print(f"[MISMATCH] Mismatch at node {graph.path[index]}. The trajectory begins {gap:.2f} px from parent {graph.path[index-1]}")
-
                     flat_thetas = []
                     for segment in graph.theta_final_path[1:]:
                         flat_thetas.extend(segment)
@@ -320,9 +311,8 @@ def main():
                     print("[STATS] Goal not found this run.")
                     final_cost = None
 
-                file_name = f"HeadingBound{rwhb}_Search_Radius{rad}.csv"
-                graph.log_results(file_name=file_name, heading_boundary=rwhb, rewire_search_radius=rad, run_number=s+1, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, n_shot_segments=sum(n_shot_segments_list)/len(n_shot_segments_list), cost=final_cost,
-                                avg_first_shot_miss=avg_first_shot_miss, avg_last_shot_miss=avg_last_shot_miss, avg_max_shot_miss=avg_max_shot_miss, n_multi_shot_trials=n_multi_shot_trials)
+                file_name = f"HeadingBound{rwhb}_Search_Radius{rwrad}.csv"
+                graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=args.reverse_heading_boundary, reverse_search_radius=args.reverse_search_radius, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost)
                     
                 if not(args.repeat_program and s+1 < args.repeat_program_num):
                     break
