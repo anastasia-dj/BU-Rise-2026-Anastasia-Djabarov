@@ -13,56 +13,47 @@ class TestRewireNode(unittest.TestCase):
     def setUp(self):
         self.graph = Graph(start=(0,0,0), goal=(100,100,0), map_dimensions=(640,480))
         self.graph.v = 1
+
+    # Test sibling copy and rewire
+    def test_sibling_copy_rewire(self):
+        root = Node(position=(0,0), orientation=0, parent=0, cost=0.0, control_input=None, trajectory_samples=None) # Create tree root
+        node1 = Node(position=(5,0), orientation=0, parent=0, cost=5.0, control_input=(1, 0.0, 5.0), trajectory_samples=([1,2,3,4,5], [0,0,0,0,0], [0,0,0,0,0]))
+        new_node = Node(position=(4,0.5), orientation=0, parent=0, cost=100.0, control_input=(1,0.4,3.0)) # Make fake new node
+        nodes = [root, node1, new_node]
+
+        self.graph.rewire_node(nodes, search_radius=1, delta=1, heading_boundary=180)
+
+        self.assertEqual(len(nodes),3) # No new nodes were made
+        self.assertEqual(new_node.parent, node1.parent) # Siblings
+        self.assertEqual(new_node.control_input, (1, 0.0, 4)) # Copied correctly
+        self.assertAlmostEqual(new_node.cost, 4.0) # Copied correctly
+        self.assertEqual(new_node.position, (4, 0.5)) # Untouched
+        self.assertEqual(new_node.orientation, (0)) # Untouched
     
-    # Simulate a fake root and edge
-    def make_root_and_edge(self):
-        root = Node(position=(0,0), orientation=0, parent=0, cost=0.0, trajectory_samples=None) # Create tree root
-        node1 = Node(position=(5,0), orientation=0, parent=0, cost=5.0, trajectory_samples=([1,2,3,4,5], [0,0,0,0,0], [0,0,0,0,0]))
-        return root, node1
+    # Test if there is nothing else on the map
+    def test_no_rewire_when_nothing_qualifies(self):
+        root = Node(position=(0,0), orientation=0, parent=0, cost=0.0, control_input=None) # Create tree root
+        far_node = Node(position=(500,500), orientation=0, parent=0, cost=8.0, control_input=(1, 0.3, 2.0))
+        nodes = [root, far_node]
+        original_control = far_node.control_input
+        self.graph.rewire_node(nodes, search_radius=1, delta=1, heading_boundary=180)
 
-    # Test if node is rewired if cost is cheaper after rewiring
-    def test_mid_edge_rewire_and_split(self):
-        root, node1 = self.make_root_and_edge()
-        rewired_node = Node(position=(4,0.5), orientation=0, parent=0, cost=100.0) # Node added close to other node with purposefully high cost
-        nodes = [root, node1, rewired_node]
-        self.graph.rewire_node(nodes, search_radius=1, delta=1) # search_radius = delta = 1 for easy arithmetic
+        self.assertEqual(far_node.control_input, original_control)
+        self.assertEqual(len(nodes), 2)
 
-        # M got promoted, check position
-        self.assertEqual(len(nodes),4)
-        promoted = nodes[3]
-        self.assertAlmostEqual(promoted.position[0], 4)
-        self.assertAlmostEqual(promoted.position[1], 0)
-
-        # Check that rewired_node was rewired through M
-        self.assertEqual(rewired_node.parent, 3) 
-        self.assertAlmostEqual(rewired_node.cost, 4.5)
-
-        # Check that node 1 still has the same cost
-        self.assertAlmostEqual(node1.cost, 5.0)
-    
-    # Test if node is rewired if cost is more expensive after rewiring
-    def test_no_rewire_when_nothing_improves_cost(self):
-        root, node1 = self.make_root_and_edge()
-        not_rewired_node = Node(position=(4,0.5), orientation=0, parent=0, cost=1.0) # Node added close to node1 with purposefully low cost
+    def test_no_rewire_when_cost_does_not_improve(self):
+        root = Node(position=(0,0), orientation=0, parent=0, cost=0.0, control_input=None) # Create tree root
+        node1 = Node(position=(5,0), orientation=0, parent=0, cost=5.0, control_input=(1, 0.0, 5.0), trajectory_samples=([1,2,3,4,5], [0,0,0,0,0], [0,0,0,0,0]))
+        not_rewired_node = Node(position=(4,0.5), orientation=0, parent=0, cost=1.0, control_input=(1, 0.2, 2.0))
         nodes = [root, node1, not_rewired_node]
-        self.graph.rewire_node(nodes, search_radius=1, delta=1)
+        original_control = not_rewired_node.control_input
+        
+        self.graph.rewire_node(nodes, search_radius=1, delta=1, heading_boundary=180)
 
-        # M was NOT promoted
-        self.assertEqual(len(nodes), 3)
-        self.assertEqual(not_rewired_node.parent, 0)
-        self.assertAlmostEqual(not_rewired_node.cost, 1)
-
-    # Test if node is rewired to an existing node if cost is cheaper after rewiring
-    def test_rewire_to_existing_node(self):
-        root, node1 = self.make_root_and_edge()
-        rewired_node = Node(position=(5,0.5), orientation=0, parent=0, cost=8.0) # Node added close to node1 with purposefully high cost
-        nodes = [root, node1, rewired_node]
-        self.graph.rewire_node(nodes, search_radius=1, delta=1)
-
-        # No node promoted but node was rewired
-        self.assertEqual(len(nodes), 3)
-        self.assertEqual(rewired_node.parent, 1)
-        self.assertAlmostEqual(rewired_node.cost, 5.5)
+        self.assertGreater(self.graph.candidates_in_radius, 0) # Confirm the candidate is actuallyseen
+        self.assertEqual(not_rewired_node.parent, 0) # Did not rewire
+        self.assertEqual(not_rewired_node.control_input, original_control) # Did not copy control input
+        self.assertAlmostEqual(not_rewired_node.cost, 1.0) # Did not copy cost
 
 class TestGoalReached(unittest.TestCase):
     def setUp(self):

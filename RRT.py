@@ -209,7 +209,7 @@ class Graph():
     
     def rewire_node(self, nodes, search_radius, delta, heading_boundary):
         """
-        Within a search radius, it finds the position (not strictly a node) with the lowest cost and rewires the node.
+        Within a search radius, it finds the position (not strictly a node) with the lowest cost and copies the position's control input and cost to the new node.
         PARAMETERS
             tree : tree
             parent : list
@@ -224,28 +224,27 @@ class Graph():
         new_node_index = len(nodes)-1
         new_node = nodes[new_node_index]
         best_cost = new_node.cost
-        best_point = None
-
-        
+        best_point = None # (candidate_node_index, sample_index_j, candidate_v, candidate_w)
 
         for i in range(len(nodes)):
             if i == new_node_index: 
                 continue # Do not consider the new node as a parent to itself
             candidate_node = nodes[i]
-            if candidate_node.trajectory_samples is None:
-                continue # Root has no trajectory to search
+            if candidate_node.trajectory_samples is None or candidate_node.control_input is None:
+                continue # Root has no trajectory/control_input to search
             xs, ys, thetas = candidate_node.trajectory_samples
+            candidate_v, candidate_w, candidate_t = candidate_node.control_input
             for j in range(len(xs)): # Check each individual sample
                 distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
                 if distance <= search_radius:
                     self.candidates_in_radius += 1
                     if self.angle_difference(thetas[j], new_node.orientation) <= heading_boundary:
-                        cost_to_candidate = nodes[candidate_node.parent].cost + (j+1)*delta*abs(self.v) # Cost to reach the candidate from the root
-                        candidate_cost = cost_to_candidate + distance
+                        # Cost as if new_node were sample j of candidate_node's edge
+                        candidate_cost = nodes[candidate_node.parent].cost + (j+1)*delta*abs(self.v) 
                         if candidate_cost < best_cost:
                             best_cost = candidate_cost
-                            best_point = (i,j)
-                    elif self.angle_difference(thetas[j], new_node.orientation) > heading_boundary:
+                            best_choice = (i,j, candidate_v, candidate_w)
+                    else:
                         self.candidates_blocked_by_heading +=1 ;
         
         if best_point is None: # A better route was NOT found
@@ -255,63 +254,16 @@ class Graph():
         old_parent = new_node.parent
         old_cost = new_node.cost
 
-        edge_index, point_index = best_point
-        edge_node = nodes[edge_index]
-        xs, ys, thetas = edge_node.trajectory_samples
-        last_point_index = len(xs)-1
-        
-        if point_index == last_point_index: # Check if candidate is already a node
-            new_node.parent = edge_index
-            new_node.cost = best_cost
-            new_node.control_input = None
+        candidate_index, j, candidate_v, candidate_w = best_choice
+        candidate_node = nodes[candidate_index]
+        candidate_t = (j+1)*delta # Time to the position
 
-            # Add init and final path point 
-            interpolate_xs, interpolate_ys, interpolate_thetas = self.interpolate_connection(xs[point_index], ys[point_index], thetas[point_index], new_node.position[0], new_node.position[1], new_node.orientation, delta)
-            new_node.trajectory_samples = ([xs[point_index]] + interpolate_xs, [ys[point_index]]+ interpolate_ys, [thetas[point_index]]+ interpolate_thetas)
-
-        else: 
-            # Candidate is mid-edge. Split edge_node's edge, promoting a new node M
-            point_x, point_y, point_theta = xs[point_index], ys[point_index], thetas[point_index]
-
-            if edge_node.control_input is not None:
-                original_v, original_w, original_t = edge_node.control_input
-                m_control_input = (original_v, original_w, (point_index+1)*delta)
-            else:
-                # edge_node's own connection was itself a fake (straight-line) rewire 
-                m_control_input = None
-
-            M = Node(
-                position=(point_x, point_y),
-                orientation=point_theta,
-                parent=edge_node.parent,
-                cost=nodes[edge_node.parent].cost + (point_index+1)*delta*abs(self.v),
-                control_input=m_control_input,
-                trajectory_samples=(xs[:point_index+1], ys[:point_index+1], thetas[:point_index+1])
-            )
-            nodes.append(M)
-            m_index = len(nodes)-1
-
-            # edge_node now starts from M instead of its old parent (edge splitting here)
-            edge_node.parent = m_index
-            edge_node.trajectory_samples = (xs[point_index+1:], ys[point_index+1:], thetas[point_index+1:])
-            if edge_node.control_input is not None:
-                edge_node.control_input = (original_v, original_w, len(edge_node.trajectory_samples[0])*delta)
-            edge_node.cost = M.cost + len(edge_node.trajectory_samples[0])*delta*abs(self.v)
-
-            # Rewire new_node to promoted M
-            new_node.parent = m_index
-            new_node.cost = best_cost
-            new_node.control_input = None
-
-            # Add init and final path point (NEW)
-            new_node.trajectory_samples = (
-                [point_x, new_node.position[0]],
-                [point_y, new_node.position[1]],
-                [point_theta, new_node.orientation]
-            )
-        
+        new_node.parent = candidate_node.parent # Make new_node the sibling of the parent
+        new_node.control_input = (candidate_v, candidate_w, candidate_t)
+       
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
+    # NOTE: May be retired soon. 
     def interpolate_connection(self, start_x, start_y, start_theta, end_x, end_y, end_theta, delta):
         """
         Interpolates a connection assuming a straight line between start_position and end_position. Purely for visualization.
@@ -691,6 +643,7 @@ class Graph():
         if self.is_goal_found:
             self.draw_final_path_2d(map=environment.map, color=environment.RED, width=1)
 
+    # NOTE: RETIRED 
     def path_from_node_to_root(self, start_index):
         """
         Given any node, this function walks back the .parent references until it reaches the root. (start_index --> root) 
@@ -753,6 +706,7 @@ class Graph():
 
         return x, y, math.degrees(theta), total_shot_distance, n_shot_segments, first_shot_miss, last_shot_miss, max_shot_miss
         
+    # NOTE: WILL BE RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
         """
         When given an initial point and target point, this function loops random control inputs for a fixed amount of trials
@@ -804,3 +758,4 @@ class Graph():
                 writer.writerow(["run_number", "heading_boundary", "search_radius", "avg_position_drift", "avg_heading_drift", "avg_n_shot_segments", "cost", "avg_first_shot_miss", "avg_last_shot_miss", "avg_max_shot_miss", "n_multi_shot_trials"])
                 file_exists = True
             writer.writerow([run_number, heading_boundary, search_radius, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials])
+
