@@ -207,7 +207,7 @@ class Graph():
 
             return self.x_new, self.theta_new, trajectory_samples
     
-    def rewire_node(self, nodes, search_radius, delta, heading_boundary, robot):
+    def rewire_node(self, nodes, rewire_search_radius, delta, heading_boundary, robot):
         """
         Within a search radius, it finds the position (not strictly a node) with the lowest cost and copies the position's control input and cost to the new node.
         PARAMETERS
@@ -215,7 +215,7 @@ class Graph():
             parent : list
             orientation_tree : list
             cost : float
-            search_radius : float (take in arg)
+            rewire_search_radius : float (take in arg)
             delta : float (take in arg)
             x_new : list with tuple for (x,y)
         RETURNS
@@ -236,7 +236,7 @@ class Graph():
             candidate_v, candidate_w, candidate_t = candidate_node.control_input
             for j in range(len(xs)): # Check each individual sample
                 distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
-                if distance <= search_radius:
+                if distance <= rewire_search_radius:
                     self.candidates_in_radius += 1
                     if self.angle_difference(thetas[j], new_node.orientation) <= heading_boundary:
                         # Cost as if new_node were sample j of candidate_node's edge
@@ -245,7 +245,7 @@ class Graph():
                             best_cost = candidate_cost
                             best_choice = (i,j, candidate_v, candidate_w)
                     else:
-                        self.candidates_blocked_by_heading +=1 ;
+                        self.candidates_blocked_by_heading +=1
         
         if best_choice is None: # A better route was NOT found
             return 
@@ -270,7 +270,6 @@ class Graph():
 
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
-    # NOTE: May be retired soon. 
     def interpolate_connection(self, start_x, start_y, start_theta, end_x, end_y, end_theta, delta):
         """
         Interpolates a connection assuming a straight line between start_position and end_position. Purely for visualization.
@@ -479,7 +478,7 @@ class Graph():
         # Needs to be rect to check for collision
         rect = self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
 
-        return rect;
+        return rect
 
     def draw_new_robot_configuration(self, robot_img, environment):
         # Draw a robot's configuration at every new node
@@ -669,51 +668,78 @@ class Graph():
         path.append(0)
         return path
 
-    def drive_backwards(self, start_index, robot, nodes):
+    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, root_index=0, max_steps=1000):
         """
-        Given any node, this function calculates the reversed control_input and returns the position which the robot
-        ended up in after following the reversed control_input. 
+        Off-branch reversal. At every step, search the robot's current position and heading. Find the nearest node and reverse its control input. 
+        Each accepted hop must be to a control input with lower cost.
         PARAMETERS
-            start_index : int (Index of starting node)
-            robot : Robot object
             nodes : Node 
+            start_x/y/theta_deg : float (Where the robot begins)
+            reverse_search_radius/reverse_heading_boundary : float 
+            position_threshold : float
+            root_index = int
+            max_steps : int
         RETURNS
-            x, y, theta(deg) : float
-            total_shot_distance : float (Total distance shot off from the goal)
-            n_shot_segments : int (Number of segments shot)
+            arrived_at_goal : bool
+            x,y,theta : float
+            n_hops : int
+            total_path_cost : float (Total path cost of the robot's path, not the tree)
+            failure_reason : str
         """
-        path_indices = self.path_from_node_to_root(start_index) # List of start_index -> root
-        x = nodes[start_index].position[0]
-        y = nodes[start_index].position[1]
-        theta = math.radians(nodes[start_index].orientation)
+        # Set up current state variables (x, y, theta)
+        x, y = start_x, start_y
+        theta = math.radians(start_theta_deg)
+        previous_cost = None
+        n_hops = 0
+        arrived_at_goal = False
+        total_path_cost = 0.0
         
-        total_shot_distance = 0.0
-        n_shot_segments = 0
-        shot_misses = []
+        for step in range(max_steps):
+            # Reached goal
+            if self.reached_root(nodes, root_index, x, y, position_threshold):
+                arrived_at_goal = True
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'reached_root'
+            
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, root_index)
 
-        for node_index in path_indices:
-            if node_index == 0:
-                break # Root does not have a control input to reverse
-            if nodes[node_index].control_input is not None:
-                v,w,t = nodes[node_index].control_input
-                x,y,theta = robot.closed_form_step(x,y,theta,-v,-w,t)
+            # No candidates qualified 
+            if nearest_qualifying_node is None:
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'stuck_no_candidate'
+            
+            index, cost = nearest_qualifying_node
+
+            # No candidates are cheaper 
+            if previous_cost is not None and not (cost < previous_cost):
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'stuck_no_progress'
+            
+            # Actual movement 
+            v,w,t = nodes[index].control_input
+            #x,y,theta = robot.closed_form_step(x,y,theta,-v,-w,t)
+            steps_in_edge = int(t/self.delta)
+            committed_full_hop = True
+            k=0
+
+            for k in range(1, steps_in_edge+1):
+                x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
+                mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, root_index)
+
+                if mid_found is not None and mid_found[1] < cost:
+                    x, y, theta = x_new, y_new, theta_new
+                    index, cost = mid_found
+                    committed_full_hop = False
+                    break
+
+            if committed_full_hop:
+                x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
+                total_path_cost += t*abs(v)
             else: 
-                parent_index = nodes[node_index].parent
-                target_x,target_y = nodes[parent_index].position
-                target_theta_deg = nodes[parent_index].orientation
-                (x,y,theta), shot_distance = self.shoot_toward_target(robot,x,y,theta,target_x,target_y, target_theta_deg)
-                print(f"[SHOT] target=({target_x:.1f},{target_y:.1f}), landed at ({x:.1f},{y:.1f}), miss={shot_distance:.2f}px")
-                total_shot_distance += shot_distance
-                n_shot_segments +=1
-                shot_misses.append(shot_distance)
-        
-        first_shot_miss = shot_misses[0] if shot_misses else None
-        last_shot_miss = shot_misses[-1] if shot_misses else None
-        max_shot_miss = max(shot_misses) if shot_misses else None
+                total_path_cost += k *self.delta * abs(v)
 
-        return x, y, math.degrees(theta), total_shot_distance, n_shot_segments, first_shot_miss, last_shot_miss, max_shot_miss
-        
-    # NOTE: WILL BE RETIRED 
+            n_hops += 1
+            previous_cost = cost 
+            return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'max_steps_exceeded'
+
+    # NOTE: RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
         """
         When given an initial point and target point, this function loops random control inputs for a fixed amount of trials
@@ -744,9 +770,32 @@ class Graph():
         
         return best_configuration, best_distance
     
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, root_index):
+        """
+        Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
+        The root is not included.
+        RETURNS
+            node_index : int
+            cost : float
+            (Of the lowest cost real node within both reverse_search_radius and reverse_heading_boundary)
 
+        """
+        best = None
+        for i, n in enumerate(nodes):
+            if i == root_index:
+                continue # Exclude the root index
+            distance = math.hypot(n.position[0]-x, n.position[1]-y)
+            if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
+                if best is None or n.cost < best[1]:
+                    best = (i, n.cost)
+        return best
     
-    def log_results(self, file_name, heading_boundary, search_radius, run_number, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials):
+    def reached_root(self, nodes, root_index, x, y, position_threshold):
+        # Check if the robot is within a position threshold of the root
+        root = nodes[root_index]
+        return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
+    
+    def log_results(self, file_name, heading_boundary, rewire_search_radius, run_number, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -762,7 +811,7 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "heading_boundary", "search_radius", "avg_position_drift", "avg_heading_drift", "avg_n_shot_segments", "cost", "avg_first_shot_miss", "avg_last_shot_miss", "avg_max_shot_miss", "n_multi_shot_trials"])
+                writer.writerow(["run_number", "heading_boundary", "rewire_search_radius", "avg_position_drift", "avg_heading_drift", "avg_n_shot_segments", "cost", "avg_first_shot_miss", "avg_last_shot_miss", "avg_max_shot_miss", "n_multi_shot_trials"])
                 file_exists = True
-            writer.writerow([run_number, heading_boundary, search_radius, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials])
+            writer.writerow([run_number, heading_boundary, rewire_search_radius, avg_position_drift, avg_heading_drift, n_shot_segments, cost, avg_first_shot_miss, avg_last_shot_miss, avg_max_shot_miss, n_multi_shot_trials])
 

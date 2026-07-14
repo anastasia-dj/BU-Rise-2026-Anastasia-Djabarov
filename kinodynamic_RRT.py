@@ -16,7 +16,7 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 
-# Command line inputs 
+# Original kRRT command lines
 parser = argparse.ArgumentParser(description='kRRT algorithm for a car-like robot.')
 parser.add_argument('-o', '--obstacles', type=bool, action=argparse.BooleanOptionalAction,
 	metavar='', required=False, help='Obstacles on the map')
@@ -46,34 +46,48 @@ parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', req
 parser.add_argument('-stb', '--show_tree_building', type=bool, 
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Shows the simulation forward in time')
-parser.add_argument('-rad', '--search_radius', type=float, metavar='', required=False,
-	default=10, help='The search radius of the robot when deciding which node to rewire.')
-parser.add_argument('-hb', '--heading_boundary', type=float, metavar='', required=False,
-	default=180, help='The boundary of the heading difference which is used in rewiring..')
-parser.add_argument('-rw', '--rewire', type=bool, 
-	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
-	help='Rewires the tree nodes.')
 parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
 	help='Seed of the random numbers taken.')
-parser.add_argument('-rsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
-	help='Seed for selecting which nodes get tested in the reversibility.')
+
+# Anti-drive
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=0,
 	help='Percent change (0-100) an edge uses zero/reverse velocity instead of forward driving.')
 parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'reverse', 'both'], 
     metavar='', required=False, default='both', help='Which behavior triggers when anti_bias engages, v=0(stop), v=-v(reverse), or both (randomly picked).')
-parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
-parser.add_argument('-rt', '--reversibility_trials', type=int, metavar='', required=False, default=30,
-	help='Number of reversibility trials to do..')
+
+# Logging / Data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
 parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3,
 	help='Number of times to repeat the program.')
-parser.add_argument('-hbl', '--heading_boundary_list', nargs='+', type=float, metavar='', required=False,
-    default=None, help='List of heading_boundary values to sweep automatically: e.g. -hbl 15 20 25 30')
-parser.add_argument('-radl', '--search_radius_list', nargs='+', type=float, metavar='', required=False,
+parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
+
+# Rewire configurations
+parser.add_argument('-rw', '--rewire', type=bool, 
+	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
+	help='Rewires the tree nodes.')
+parser.add_argument('-rwhb', '--rewire_heading_boundary', type=float, metavar='', required=False,
+	default=180, help='The boundary of the heading difference which is used in rewiring..')
+parser.add_argument('-rwhbl', '--rewire_heading_boundary_list', nargs='+', type=float, metavar='', required=False,
+    default=None, help='List of heading_boundary values to sweep automatically: e.g. -rwhbl 15 20 25 30')
+parser.add_argument('-rwrad', '--rewire_search_radius', type=float, metavar='', required=False,
+	default=10, help='The search radius of the robot when deciding which node to rewire.')
+parser.add_argument('-rwradl', '--rewire_search_radius_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of search_radius values to sweep automatically: e.g. -radl 1 5 10 15')
 parser.add_argument('-stw', '--shot_theta_weight', type=float, metavar='', required=False, default=0.0,
     help='Weight applied to heading mismatch when picking the best shot, 0 = position-only (original behavior).')
 args = parser.parse_args()
+
+# Reversibility configurations
+parser.add_argument('-rvhb', '--reverse_heading_boundary', type=float, metavar='', required=False,
+	default=180, help='The boundary of the heading difference which is used in rewiring..')
+parser.add_argument('-rvrad', '--reverse_search_radius', type=float, metavar='', required=False,
+	default=10, help='The search radius of the robot when deciding which node to rewire.')
+parser.add_argument('-rvt', '--reversibility_trials', type=int, metavar='', required=False, default=30,
+	help='Number of reversibility trials to do..')
+parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
+	help='Seed for selecting which nodes get tested in the reversibility.')
+parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node', 'map', 'tree_box'], 
+    metavar='', required=False, default='node', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
 
 # Initialization
 pygame.init()
@@ -94,11 +108,11 @@ environment = environment.Environment(dimensions=MAP_DIMENSIONS, show_tree_build
 robot = robot.Robot(start=args.x_init, robot_img=robot_images, length=0.01)
 def main():
     heading_boundaries_to_test = args.heading_boundary_list if args.heading_boundary_list is not None else [args.heading_boundary]
-    search_radii_to_test = args.search_radius_list if args.search_radius_list is not None else [args.search_radius]
+    rewire_search_radii_to_test = args.rewire_search_radius_list if args.rewire_search_radius_list is not None else [args.search_radius]
 
 
-    for hb in heading_boundaries_to_test:
-        for rad in search_radii_to_test:
+    for rwhb in heading_boundaries_to_test:
+        for rad in rewire_search_radii_to_test:
             s = 0
             while True:
                 graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
@@ -176,7 +190,7 @@ def main():
                             print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
                             if args.rewire: 
-                                graph.rewire_node(nodes=nodes, search_radius=rad, delta=args.delta, heading_boundary=hb, robot=robot)
+                                graph.rewire_node(nodes=nodes, rewire_search_radius=rad, delta=args.delta, heading_boundary=rwhb, robot=robot)
                         
                         if args.show_new_configurations and args.show_tree_building:
                             # Draws a small rotated robot image at every node position added to the tree 
@@ -193,53 +207,63 @@ def main():
                         environment.map.fill(environment.WHITE)
                                     
                 print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
-                print(f"[STATS] heading_boundary of {hb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
+                print(f"[STATS] heading_boundary of {rwhb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
 
                 none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0])
                 print(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
 
-                # --- Reversibility test --- 
-                graph.nodes = nodes # For path_from_nodes
+                # --------- Reversibility Testing Start ---------
+                graph.nodes = nodes 
                 if args.reversibility_seed is not None:
                         if args.repeat_program is True:
-                            random.seed(s)
-                        else:
-                            random.seed(args.reversibility_seed)
+                            random.seed(s if args.repeat_program else args.reversibility_seed)
                 
-                shot_distances = 0.0
+                successes = 0
+                failure_reasons = {}
+                hops_for_reached_root_trials = []
+                total_path_costs = []
                 position_drifts = []
-                heading_drifts = []
-                n_shot_segments_list = []
-                n_multi_shot_trials = 0
-                first_misses, last_misses, max_misses = [], [], []
 
                 for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
-                    random_node_index = random.randint(1, len(nodes)-1)
-                    final_x,final_y,final_theta, shot_distance, n_shot_segments, first_miss, last_miss, max_miss = graph.drive_backwards(random_node_index, robot, nodes)
-                    if n_shot_segments >= 2:
-                        first_misses.append(first_miss)
-                        last_misses.append(last_miss)
-                    if max_miss is not None:
-                        max_misses.append(max_miss)
-                    n_shot_segments_list.append(n_shot_segments)
-                    position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
-                    heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
-                    position_drifts.append(position_drift)
-                    heading_drifts.append(heading_drift)
-                    print(f"[REVERSE] trial={trial}, start_node={random_node_index}, heading_drift={heading_drift:.6f}px\n"
-                        f"position_drift = {position_drift}, shot_distance={shot_distance}px, n_shot_segments={n_shot_segments}")
-                    shot_distances += shot_distance
-                
-                avg_first_shot_miss = sum(first_misses)/len(first_misses) if first_misses else None
-                avg_last_shot_miss = sum(last_misses)/len(last_misses) if last_misses else None
-                avg_max_shot_miss = sum(max_misses)/len(max_misses) if max_misses else None
-                n_multi_shot_trials = len(first_misses)
+                    # Get the robot's starting position
+                    if args.reverse_spawn_mode == 'node':
+                        random_node_index = random.randint(1, len(nodes)-1)
+                        start_node = nodes[random_node_index]
+                        start_x, start_y, start_theta_deg = start_node.position[0], start_node.position[1], start_node.orientation
+                    elif args.reverse_spawn_mode == 'map':
+                        start_x = random.uniform(0, MAP_DIMENSIONS[0])
+                        start_y = random.uniform(0, MAP_DIMENSIONS[1])
+                        start_theta_deg = random.uniform(0, 360)
+                    else: # tree box
+                        xs = [n.position[0] for n in nodes]
+                        ys = [n.position[1] for n in nodes]
+                        start_x = random.uniform(min(xs), max(xs))
+                        start_y = random.uniform(min(ys), max(ys))
+                        start_theta_deg = random.uniform(0,360)
 
-                avg_shot_distance = shot_distances/args.reversibility_trials
-                avg_position_drift = sum(position_drifts)/len(position_drifts)
-                avg_heading_drift = sum(heading_drifts)/len(heading_drifts)
-                print(f"[REVERSE] POSITION - averages over {len(position_drifts)} trials: drift_from_final_goal={avg_position_drift:.6f}, shot_distance_from_goal={avg_shot_distance}"
-                    f"\n[REVERSE] HEADING - averages over {len(heading_drifts)} trials: drift_from_final_goal={avg_heading_drift:.6f}, shot_distance_from_goal={avg_shot_distance}")
+                    success, final_x, final_y, final_theta, n_hops, total_path_cost, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=args.reverse_search_radius, reverse_heading_boundary=args.reverse_heading_boundary, position_threshold=args.position_boundary)                
+                    position_drift = math.hypot(final_x - node[0].position[0], final_y - node[0].position[1])
+
+                    print(f"[REVERSE] trial={trial}, spawn_mode={args.reverse_spawn_mode}, success={success}, reason={reason}, hops={n_hops}, cost={total_path_cost}, drift={position_drift}")
+
+                    if success:
+                        successes += 1
+                        hops_for_reached_root_trials.append(n_hops)
+                        total_path_costs.append(total_path_cost)
+                        position_drifts.append(position_drift)
+                    else:
+                        failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+
+                avg_position_drift = sum(position_drifts)/len(position_drifts) if avg_position_drft else Nona
+                success_rate = successes/args.reversibility_trials
+                avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
+                avg_total_path_costs = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
+                print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_costs}")
+                print("[REVERSE] failure breakdown:")
+                for reason, count in failure_reasons.items():
+                    print(f"    {reason}: {count}")
+
+                # --------- Reversibility Testing End --------- 
 
                 if graph.is_goal_found:
                     goal_indices = []
@@ -261,9 +285,10 @@ def main():
                     # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
                     graph.get_path_coordinates()
 
+                    # Check for trajectory jumps
                     for index in range(len(graph.path)-1, 0, -1):
-                        node = nodes[graph.path[index]]
-                        parent = nodes[graph.path[index-1]]
+                        node = nodes[graph.path[index-1]]
+                        parent = nodes[graph.path[index]]
                         if node.trajectory_samples is not None and node.control_input is not None:
                             v,w,t = node.control_input
                             expected_x,expected_y,expected_theta = robot.closed_form_step(parent.position[0], parent.position[1], math.radians(parent.orientation), v, w, t)
@@ -295,8 +320,8 @@ def main():
                     print("[STATS] Goal not found this run.")
                     final_cost = None
 
-                file_name = f"HeadingBound{hb}_Search_Radius{rad}.csv"
-                graph.log_results(file_name=file_name, heading_boundary=hb, search_radius=rad, run_number=s+1, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, n_shot_segments=sum(n_shot_segments_list)/len(n_shot_segments_list), cost=final_cost,
+                file_name = f"HeadingBound{rwhb}_Search_Radius{rad}.csv"
+                graph.log_results(file_name=file_name, heading_boundary=rwhb, rewire_search_radius=rad, run_number=s+1, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, n_shot_segments=sum(n_shot_segments_list)/len(n_shot_segments_list), cost=final_cost,
                                 avg_first_shot_miss=avg_first_shot_miss, avg_last_shot_miss=avg_last_shot_miss, avg_max_shot_miss=avg_max_shot_miss, n_multi_shot_trials=n_multi_shot_trials)
                     
                 if not(args.repeat_program and s+1 < args.repeat_program_num):
