@@ -1,1 +1,7 @@
 *.csv
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+old_rvhb_dataset/rvhb_analysis.py

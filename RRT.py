@@ -666,10 +666,9 @@ class Graph():
         path.append(0)
         return path
 
-    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, root_index=0, max_steps=1000):
+    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, root_index=0, max_steps=1000, max_non_improving_hops=1000):
         """
         Off-branch reversal. At every step, search the robot's current position and heading. Find the nearest node and reverse its control input. 
-        Each accepted hop must be to a control input with lower cost.
         PARAMETERS
             nodes : Node 
             start_x/y/theta_deg : float (Where the robot begins)
@@ -693,14 +692,16 @@ class Graph():
         visited_indices = set()
         root = nodes[root_index]
         arrived_at_goal = False
+        non_improving_streak = 0
 
+        
         for step in range(max_steps):
             # Reached goal
             if self.reached_root(nodes, root_index, x, y, position_threshold):
                 arrived_at_goal = True
                 return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'reached_root'
             
-            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, root_index, visited_indices, root)
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
@@ -709,45 +710,57 @@ class Graph():
             index, cost = nearest_qualifying_node
             visited_indices.add(index)
             v, w, t = nodes[index].control_input
-            landing_x, landing_y, landing_theta = robot.closed_form_step(x, y, theta, -v, -w, t)
-            distance_to_root = math.hypot(landing_x - root.position[0], landing_y - root.position[1])
-            
-            # No candidates are closer 
-            if previous_distance_to_root is not None and not (distance_to_root < previous_distance_to_root):
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'stuck_no_progress'
-            
-            # Actual movement 
-            v,w,t = nodes[index].control_input
             steps_in_edge = int(t/self.delta)
             committed_full_hop = True
             k=0
 
-            for k in range(1, steps_in_edge+1):
-                x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
-                mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, root_index, visited_indices, root)
+            while True:
+                for k in range(1, steps_in_edge+1):
+                    x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
+                    distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
 
-                if mid_found is not None:
-                    mid_index, mid_cost = mid_found
-                    mid_v, mid_w, mid_t = nodes[mid_index].control_input
-                    mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
-                    mid_distance_to_root =  math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
+                    # if previous_distance_to_root is not None and not (distance_to_root_now < previous_distance_to_root):
+                    #     non_improving_streak += 1
+                    #     if non_improving_streak > max_non_improving_hops:
+                    #         return arrived_at_goal, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost, 'stuck_no_progress'
+                    # else:
+                    #     non_improving_streak = 0
 
-                    if mid_distance_to_root < distance_to_root:
-                        visited_indices.add(mid_index)
-                        x, y, theta = mid_landing_x, mid_landing_y, mid_landing_theta
-                        index, cost = mid_found
-                        previous_distance_to_root = distance_to_root
-                        distance_to_root = mid_distance_to_root
-                        committed_full_hop = False
-                        break
+                    # Check if root is reached
+                    if self.reached_root(nodes, root_index, x_new, y_new, position_threshold):
+                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), 'reached_root'
+
+                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
+
+                    if mid_found is not None:
+                        mid_index, mid_cost = mid_found
+                        mid_v, mid_w, mid_t = nodes[mid_index].control_input
+                        mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
+                        mid_distance_to_root =  math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
+
+                        if mid_distance_to_root < distance_to_root_now:
+                            visited_indices.add(mid_index)
+                            x, y, theta = x_new, y_new, theta_new
+                            index = mid_index
+
+                            # Overwrite v,w,t with mid point
+                            v, w, t = mid_v, mid_w, mid_t
+                            steps_in_edge = int(t / self.delta)
+                            committed_full_hop = False
+                            break
+                else:
+                    break
+
+
 
             true_parent_idx = nodes[index].parent
             true_parent = nodes[true_parent_idx]
             dist_to_true_parent = math.hypot(x - true_parent.position[0], y - true_parent.position[1])
             heading_diff = self.angle_difference(true_parent.orientation, math.degrees(theta))
-            print(f"[DEBUG-REV]   node {index}'s TRUE parent is {true_parent_idx} (dist_to_root={distance_to_root:.2f}), "
+            final_distance_to_root = math.hypot(x - root.position[0], y - root.position[1])
+            print(f"[DEBUG-REV]   node {index}'s TRUE parent is {true_parent_idx} (dist_to_root={final_distance_to_root:.2f}), "
             f"distance from actual landing={dist_to_true_parent:.2f}px (current radius={reverse_search_radius}), "
-            f"heading_diff={heading_diff:.2f}deg (current boundary={reverse_heading_boundary})") 
+            f"heading_diff={heading_diff:.2f}deg (current boundary={reverse_heading_boundary})")
 
             if committed_full_hop:
                 x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
@@ -755,8 +768,9 @@ class Graph():
             else: 
                 total_path_cost += k *self.delta * abs(v)
 
+            distance_to_root_final = math.hypot(x - root.position[0], y - root.position[1])
             n_hops += 1
-            previous_distance_to_root = distance_to_root
+            previous_distance_to_root = distance_to_root_final
         
         return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'max_steps_exceeded'
 
@@ -791,15 +805,19 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, root_index, visited_indices, root):
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root):
         """
         Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
         The root is not included.
+
+        selection_mode : str ('root' or 'robot')
+            - 'root', pick whichever is closest to the root
+            - 'robot, pick whichever is closest to the robot
+
         RETURNS
             node_index : int
             cost : float
             (Of the lowest cost real node within both reverse_search_radius and reverse_heading_boundary)
-
         """
         best = None
         for i, n in enumerate(nodes):
@@ -807,9 +825,12 @@ class Graph():
                 continue # Exclude the root index
             distance = math.hypot(n.position[0]-x, n.position[1]-y)
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
-                distance_to_root = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
-                if best is None or distance_to_root < best[1]:
-                    best = (i, distance_to_root)
+                if selection_mode == 'root':
+                    score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
+                else: # 'robot'
+                    score = distance
+                if best is None or score < best[1]:
+                    best = (i, score)
         return best
     
     def reached_root(self, nodes, root_index, x, y, position_threshold):
