@@ -238,6 +238,7 @@ def main():
                             total_path_costs = []
                             position_drifts = []
                             heading_drifts = []
+                            failure_position_drifts = []
                             average_ts = []
 
                             for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
@@ -272,7 +273,9 @@ def main():
                                     heading_drifts.append(heading_drift)
                                 else:
                                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+                                    failure_position_drifts.append(position_drifts)
 
+                            avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
                             avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
                             avg_position_drift = sum(position_drifts)/len(position_drifts) if position_drifts else None
                             success_rate = successes/args.reversibility_trials
@@ -280,7 +283,7 @@ def main():
                             avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
                             #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
                             mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
-                            max_rewire_error = sum(graph.rewire_errors) if graph.rewire_errors else 0.0
+                            max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
                             print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                             print("[REVERSE] failure breakdown:")
                             for reason, count in failure_reasons.items():
@@ -333,7 +336,7 @@ def main():
 
 
                             file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
-                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error)
+                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, failure_position_drifts=failure_position_drifts)
                                 
                             if not(args.repeat_program and s+1 < args.repeat_program_num):
                                 break
