@@ -95,6 +95,7 @@ parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node
     metavar='', required=False, default='node', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
 parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['root', 'robot', 'cost'],
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
+parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=False, help='Exclude already-selected nodes from future searches during reversal.')
 
 args = parser.parse_args()
 
@@ -256,7 +257,7 @@ def main():
                                     start_y = random.uniform(min(ys), max(ys))
                                     start_theta_deg = random.uniform(0,360)
 
-                                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode)                
+                                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.used_visited)                
                                 average_ts.append(average_t)
                                 position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
                                 heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
@@ -328,7 +329,7 @@ def main():
                                 print("[STATS] Goal not found this run.")
                                 final_cost = None
 
-                            file_name = f"Mode{args.reverse_selection_mode}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
+                            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
                             graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_average_t=mean_average_t)
                                 
                             if not(args.repeat_program and s+1 < args.repeat_program_num):

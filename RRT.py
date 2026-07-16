@@ -666,7 +666,7 @@ class Graph():
         path.append(0)
         return path
 
-    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, root_index=0, max_steps=1000, max_non_improving_hops=1000):
+    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, use_visited, root_index=0, max_steps=1000, max_non_improving_hops=1000):
         """
         Off-branch reversal. At every step, search the robot's current position and heading. Find the nearest node and reverse its control input. 
         PARAMETERS
@@ -703,7 +703,7 @@ class Graph():
                 average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
                 return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root'
             
-            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
@@ -735,7 +735,7 @@ class Graph():
                         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
                         return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root'
 
-                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
+                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited)
 
                     if mid_found is not None:
                         mid_index, mid_cost = mid_found
@@ -812,7 +812,7 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root):
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited):
         """
         Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
         The root is not included.
@@ -828,7 +828,8 @@ class Graph():
         """
         best = None
         for i, n in enumerate(nodes):
-            if i == root_index or i in visited_indices:
+            #TODO: visited_indicies is off
+            if i == root_index or (use_visited and i in visited_indices):
                 continue # Exclude the root index
             distance = math.hypot(n.position[0]-x, n.position[1]-y)
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:

@@ -1,19 +1,20 @@
 # RISE - Sample-Based Motion Planning vs. Model-Free RL
 ## Status
-Six of the original known issues have been resolved or at least in some way addressed. Reversibility testing methods have been added (`drive_backwards()`, `shoot_toward_target()`, `path_from_node_to_root()`) to test whether a robot can retrace a path back to the root using only stored (or best-effort reconstructed for approximated connections) controls. From this, `heading_boundary` is currently found to significantly affect cost but not position drift, and `search_radius` to significantly affect both. An extension of `search_radius` sweeps (where search_radius = 25, 30, 40, 50) is in progress to eventually select a final recommended configuration.
+The rewiring and reversal logic were both redesigned. Rewiring now copies an existing control input rather than approximating a straight-line connection, and reversal drives control inputs incrementally from the robot's actual position, using the control inputs of nodes with the "best" score. Reversibility testing (`drive_backwards()`) is currently being done to test whether a robot can retrace a path back to the root using only control inputs already stored in the tree. Sweeps of `reverse_search_radius` and `position_boundary` are in progress. Three candidate-selection modes (`cost`, `robot`, `root`) are currently being compared.
 
 ## Overview 
-This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implementation of a car-like robot (x, y, theta) in three ways:
-1. Replacing the per-frame Euler-integrations with a closed-form arc trajectory solution by holding the linear velocity and angular velocity w constant over an edge's duration.
-2. Adding a cost-based rewiring within a search radius of each new node, using arc length as cost. Since v is fixed at 1, cost-to-come is the elapsed time (s = v*t = t)
-3. Visualize the tree in 3D space with theta as the z axis. 
+This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implementation of a car-like robot (x, y, theta) in several ways:
+1. Adding sibling-copy rewiring within a search radius of each new node. When a nearby node offers a cheaper path, the new node adopts that node's parent and a truncated copy of its control input, so every rewired connection is a control input the robot could actually drive.
+2. Adding off-branch reversibility testing, in which a robot spawned anywhere in the tree retraces a path back to the root by repeatedly selecting a nearby node and driving its control input in reverse, switching branches mid-motion when a better node comes into range.
+3. Replacing the per-frame Euler-integrations with a closed-form arc trajectory solution by holding the linear velocity and angular velocity w constant over an edge's duration.
+4. Visualizing the tree in 3D space with theta as the z axis. 
 
 ## File Organization
 - **node.py** - Node class: holds one node's position, orientation, parent, cost, trajectory samples, and control_input.
 - **robot.py** - Robot class: kinematics (`closed_form_step`, `generate_arc_samples`), drawing and rotation.
 - **environment.py** - Environment class: map setup, obstacles, and trail drawing.
-- **RRT.py** - Graph class: tree recording, sampling, `simulate()` (simulates one full edge per call), `rewire_node()` (rewires nodes within a search radius), path extraction, plotting, reversibility testing (`drive_backwards()`, `shoot_toward_target()`, `path_from_node_to_root()`) and CSV result logging (`log_results()`).
-- **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check). Now also supports automated parameter sweeps (`-hbl`, `-radl`) and repeated trials (`-rp`/`-rpn`).
+- **RRT.py** - Graph class: tree recording, sampling, `simulate()` (simulates one full edge per call), `rewire_node()` (rewires nodes within a search radius), path extraction, plotting, reversibility testing (`drive_backwards()`, `find_nearest_qualifying_node`) and CSV result logging (`log_results()`).
+- **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check -> reversibility testing). Now also supports automated parameter sweeps (`-hbl`, `-radl`) and repeated trials (`-rp`/`-rpn`).
 
 ## Pseudocode
     nodes = [Node(position=x_init, parent=0, cost=0)]  # root's parent is itself
@@ -36,26 +37,54 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
         append new_node to nodes
 
         # --- Rewiring ---
-        for each sample within search_radius of new_node (across all edges):
-            candidate_cost = cost[that_sample's_edge_start] 
-                + (elapsed time to that sample) 
-                + (approx. connection cost to new_node)
-            cost_to_connect_sample_to_new_node = approximately straight-line distance  # approximation, not a real arc
-            if candidate_cost < cost[new_node]:
-                rewire new_node's parent to that sample
-                (promoting it to its own Node, with its own trajectory slice, if it's mid-edge)
+        for each sample within rewire_search_radius of new_node (across all edges):
+            if heading difference within rewire_heading_boundary:
+                candidate_cost = cost[candidate's parent] + (elapsed time to that sample)
+                if candidate_cost < cost[new_node]:
+                    new_node.parent = candidate.parent
+                    new_node.control_input = (candidate_v, candidate_w, truncated_t)
+                    new_node.cost = candidate_cost
+                    # new_node.position is NOT updated
             
-        if goal_reached(new_node):
-            goal_found = True
-            walk .parent references backward from goal --> root
-            plot tree + path in 3D (x, y, theta)
+    # --- Reversibility Testing ---
+    spawn robot at (x, y, theta)
+    visited = empty set
+
+    while steps < max_steps:
+        if within position_boundary of root:
+            return success
+        candidates = nodes within reverse_search_radius and reverse_heading_boundary of robot (excluding visited)
+        if no candidates:
+            return failure # No candidates in the vicinity
+        
+        best = candidate with lowest score # cost-to-come, distance to robot, or distance to root - depends on mode
+        visited.add(best)
+        v, w, t = best.control_input
+
+        while True:
+            for k in 1(t/delta) # Reverse in increments
+                step robot to closed_form_step(x,y,theta,-v,-w,k*delta)
+                if within position_boundary of root:
+                    return success
+                better = search again for a better node from current position (excluding visited)
+                if better is not None and better score is more preferable to best 
+                    visited.add(better)
+                    v, w, t = better.control_input # New control overwrites old control
+                    break # Restart stepping with new control
+            else:
+                    break # Ran to completion untouched
+        steps += 1
+
+    return failure # max steps exceeded
 
 ## Current Design Decisions
 The core design decisions (so far) were suggested by Professor Tron and adopted for this implementation:
+- **Off-branch reversal** - During reversal the robot searches the whole tree from its current position rather than walking its own .parent chain back to the root. It selects a nearby node, reverses that node's control input, and drives it incrementally, switching to a better node if one comes into range mid-motion. This allows the robot to cross between branches and use only existing control inputs.
+- **Sibling-copy rewiring** - When a cheaper connection is found, the new node adopts the candidate's parent and a truncated copy of the candidate's control input, becoming a child of that parent. Every rewired connection is therefore a real, already-simulated control input rather than a straight-line approximation. The node's position is not updated to the adopted control's true endpoint, so each rewired edge carries a small approximation error - see [Known Issue #8](#issue-8)
+- **Sampling by extending from a random existing node** - Rather than sampling a random point on the map and connecting to the nearest existing node (as in standard RRT*), a random node already in the tree is selected and extended directly. This makes each new node's parent known at creation, removing the need to search for one - see [Known Issue #1](#issue-1)
 - **v fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution
 - **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
-- **Rewiring by searching through simulated arc points and tree nodes** - Every candidate point being searched is a real previously-simulated position rather than an arbitrary coordinate. However, the final connection from that candidate to the node being rewired is currently still being approximated by straight-line distance (not a verified arc) - see [Known Issue #3](#issue-3)
-- **Sampling by extending from a random existing node** - Rather than sampling a random point on the map and connecting to the nearest existing node (as in standard RRT*), a random node already in the tree is selected and extended directly. This makes each new node's parent known at creation, removing the need to search for one - see [Known Issue #1](#issue-1)
+
 
 
 ## Known Issues
@@ -64,12 +93,14 @@ The core design decisions (so far) were suggested by Professor Tron and adopted 
 <a id="issue-2"></a>
 2. ~~Previous path extraction (`get_path_coordinates()`) currently matches path nodes to edges by checking for an exact endpoint match with the successful path. This fails for two reasons: (a) nodes created via mid-edge rewiring aren't stored at the end of an edge, and (b) `generate_arc_samples()` truncates to floor(t/delta) steps while the real node is computed using the full, untruncated edge_time_duration. In both cases, the sample essentially does not match the node's true coordinates for many nodes.~~ **Resolved.** (a) is fixed by the Node refactor. Every node, including ones created via mid-edge rewiring, stores its own trajectory directly, so path extraction reads it off the node instead of searching for an edge endpoint match. (b) was fixed separately by manually having `generate_arc_samples()` append the true, untruncated endpoint as its final sample. 
 <a id="issue-3"></a>
-3. ~~Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Since this project is based onf orward propagation only (no steering), there is no v,w or t which can be calcualted to reach a specific point.~~ **Partially resolved.** During reversibility testing, a lack of control input to reverse becomes an issue. Currently, the algorithm instead samples 1000 random forward controls and keeps whichever lands closest to the target.
+3. ~~Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Since this project is based onf orward propagation only (no steering), there is no v,w or t which can be calcualted to reach a specific point.~~ **Resolved.** Reversal now only ever uses control inputs that already exist within the tree.
 <a id="issue-4"></a>
 4. ~~Currently, checking for a collision only includes the initial and final position. This does not account for the possibility that an obstacle may be between the initial and final positions.~~ **Resolved.** Within `simulate()`, the algorithm now cycles through `xs_samples`, `ys_samples`, and `thetas_samples`, checking each sampled pose for collisions to verify that the entire path is collision-free.
 <a id="issue-5"></a>
-5.~~ Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all.~~ **Partially resolved.** A `heading_boundary` parameter was implemented, blocking a rewire from occurring if the heading difference between two configurations exceeds a set threshold. However, a two-sample independent t-test comparing average position drift across seven tested average `heading_boundary` values (n=30 repeats each) found no statistically significant effect on position drift. 
+5.~~ Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all.~~ **Partially resolved.** A `rewire_heading_boundary` parameter was implemented, blocking a rewire from occurring if the heading difference between two configurations exceeds a set threshold. Its effect has not been re-measured since the rewiring and reversal redesign.
 <a id="issue-6"></a>
 6. ~~The 3D plot for simulations that do reach the goal shows incomplete portions and visible "jumps" between segments of the path. The suspected cause is from a missed update of .trajectory_samples.~~ **Resolved.** In `rewire_node()`​, the `trajectory_samples`​ for the promoted node and for the node on the edge containing it were being updated, but the `trajectory_samples​` of the node being rewired itself were not, resulting in a gap. This was fixed by adding the new parent's configuration and the node's own configuration to `trajectory_samples`,​ and by switching the 3D plot from `ax.scatter​` to `ax.plot`​ so these two points create a continuous line.
 <a id="issue-7"></a>
-7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=1. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. **Update:** an `anti_drive_bias` parameter was added, giving an edge a configurable change of driving with `v=0` or `v=-v_magnitude` intended to encourage exploration into underrepresented regions of the map. This has been implemented but not yet rigorously validated. 
+7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=v_magnitude. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. **Update:** an `anti_drive_bias` parameter was added, giving an edge a configurable change of driving with `v=0` or `v=-v_magnitude` intended to encourage exploration into underrepresented regions of the map. This has been implemented but not yet rigorously validated. 
+<a id="issue-8"></a>
+8. Rewired nodes keep their original position while adopting a truncated control input, so the adopted control lands near the node rather than on it. Each rewired edge carries a small approximation error bounded by `rewire_search_radius`.
