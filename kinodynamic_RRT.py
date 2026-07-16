@@ -257,7 +257,7 @@ def main():
                                     start_y = random.uniform(min(ys), max(ys))
                                     start_theta_deg = random.uniform(0,360)
 
-                                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.used_visited)                
+                                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
                                 average_ts.append(average_t)
                                 position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
                                 heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
