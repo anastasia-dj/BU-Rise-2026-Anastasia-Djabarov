@@ -700,13 +700,15 @@ class Graph():
             # Reached goal
             if self.reached_root(nodes, root_index, x, y, position_threshold):
                 arrived_at_goal = True
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'reached_root'
+                average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root'
             
             nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'stuck_no_candidate'
+                average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'stuck_no_candidate'
             
             index, cost = nearest_qualifying_node
             visited_indices.add(index)
@@ -730,7 +732,8 @@ class Graph():
 
                     # Check if root is reached
                     if self.reached_root(nodes, root_index, x_new, y_new, position_threshold):
-                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), 'reached_root'
+                        average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root'
 
                     mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root)
 
