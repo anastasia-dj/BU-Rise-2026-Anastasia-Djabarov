@@ -273,7 +273,7 @@ def main():
                                     heading_drifts.append(heading_drift)
                                 else:
                                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
-                                    failure_position_drifts.append(position_drifts)
+                                    failure_position_drifts.append(position_drift)
 
                             avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
                             avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
@@ -336,7 +336,7 @@ def main():
 
 
                             file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
-                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, failure_position_drifts=failure_position_drifts)
+                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift)
                                 
                             if not(args.repeat_program and s+1 < args.repeat_program_num):
                                 break
