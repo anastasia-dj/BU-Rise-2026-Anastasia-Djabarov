@@ -686,13 +686,14 @@ class Graph():
         # Set up current state variables (x, y, theta)
         x, y = start_x, start_y
         theta = math.radians(start_theta_deg)
-        previous_distance_to_root = None   
+        #previous_distance_to_root = None   
         n_hops = 0
         total_path_cost = 0.0
         visited_indices = set()
         root = nodes[root_index]
         arrived_at_goal = False
-        non_improving_streak = 0
+        #non_improving_streak = 0
+        selected_t_values = []
 
         
         for step in range(max_steps):
@@ -710,6 +711,7 @@ class Graph():
             index, cost = nearest_qualifying_node
             visited_indices.add(index)
             v, w, t = nodes[index].control_input
+            selected_t_values.append(t)
             steps_in_edge = int(t/self.delta)
             committed_full_hop = True
             k=0
@@ -745,6 +747,7 @@ class Graph():
 
                             # Overwrite v,w,t with mid point
                             v, w, t = mid_v, mid_w, mid_t
+                            selected_t_values.append(t)
                             steps_in_edge = int(t / self.delta)
                             committed_full_hop = False
                             break
@@ -772,7 +775,8 @@ class Graph():
             n_hops += 1
             previous_distance_to_root = distance_to_root_final
         
-        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, 'max_steps_exceeded'
+        average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_steps_exceeded'
 
     # NOTE: RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
@@ -827,6 +831,8 @@ class Graph():
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
                 if selection_mode == 'root':
                     score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
+                if selection_mode == 'cost':
+                    score=n.cost
                 else: # 'robot'
                     score = distance
                 if best is None or score < best[1]:
@@ -838,7 +844,7 @@ class Graph():
         root = nodes[root_index]
         return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
     
-    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost):
+    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_average_t):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -856,7 +862,7 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost"])
+                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_average_t per control_input"])
                 file_exists = True
-            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost])
+            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, mean_average_t])
 
