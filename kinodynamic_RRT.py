@@ -278,7 +278,9 @@ def main():
                             success_rate = successes/args.reversibility_trials
                             avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
                             avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
-                            mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
+                            #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
+                            mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
+                            max_rewire_error = sum(graph.rewire_errors) if graph.rewire_errors else 0.0
                             print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                             print("[REVERSE] failure breakdown:")
                             for reason, count in failure_reasons.items():
@@ -329,8 +331,9 @@ def main():
                                 print("[STATS] Goal not found this run.")
                                 final_cost = None
 
+
                             file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
-                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_average_t=mean_average_t)
+                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error)
                                 
                             if not(args.repeat_program and s+1 < args.repeat_program_num):
                                 break

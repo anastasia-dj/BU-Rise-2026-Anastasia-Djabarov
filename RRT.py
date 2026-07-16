@@ -23,6 +23,7 @@ class Graph():
         self.WIDTH, self.HEIGHT = map_dimensions
         
         self.candidates_in_radius = 0
+        self.rewire_errors = []
         self.candidates_blocked_by_heading = 0
         self.v_magnitude = 10
 
@@ -265,6 +266,9 @@ class Graph():
         parent_node = nodes[new_node.parent]
         xs,ys,thetas_rad = robot.generate_arc_samples(parent_node.position[0], parent_node.position[1], math.radians(parent_node.orientation), candidate_v, candidate_w, candidate_t, delta)
         new_node.trajectory_samples = (xs,ys,[math.degrees(t) for t in thetas_rad])
+
+        rewire_error = math.hypot(xs[-1] - new_node.position[0], ys[-1] - new_node.position[1])
+        self.rewire_errors.append(rewire_error)
 
         print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
@@ -848,7 +852,7 @@ class Graph():
         root = nodes[root_index]
         return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
     
-    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_average_t):
+    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -866,7 +870,7 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_average_t per control_input"])
+                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_rewire_error", "max_rewire_error"])
                 file_exists = True
-            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, mean_average_t])
+            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, mean_rewire_error, max_rewire_error])
 
