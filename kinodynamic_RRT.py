@@ -8,6 +8,9 @@ import argparse
 import sys
 import csv
 import os 
+import itertools
+
+from tqdm import tqdm
 
 from node import Node
 
@@ -97,6 +100,9 @@ parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['r
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
 parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=False, help='Exclude already-selected nodes from future searches during reversal.')
 
+# Quality of life
+parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=True, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
+
 args = parser.parse_args()
 
 # Initialization
@@ -122,225 +128,240 @@ def main():
     reverse_search_radii_to_test = args.reverse_search_radius_list if args.reverse_search_radius_list is not None else [args.reverse_search_radius]
     position_boundaries_to_test = args.position_boundary_list if args.position_boundary_list is not None else [args.position_boundary]
     reverse_heading_boundary_to_test = args.reverse_heading_boundary_list if args.reverse_heading_boundary_list is not None else [args.reverse_heading_boundary]
-    for rwhb in rewire_heading_boundaries_to_test:
-        for rwrad in rewire_search_radii_to_test:
-            for rvrad in reverse_search_radii_to_test:
-                for pb in position_boundaries_to_test:
-                    for rvhb in reverse_heading_boundary_to_test:
-                        s = 0
-                        while True:
-                            graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
-                            if args.seed is not None:
-                                if args.repeat_program is True:
-                                    random.seed(s+10)
-                                else:
-                                    random.seed(args.seed)
-                            run = True
-                            clock = pygame.time.Clock()
 
-                            nodes = [Node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
+    combos = list(itertools.product(
+        rewire_heading_boundaries_to_test, rewire_search_radii_to_test, reverse_search_radii_to_test,
+        position_boundaries_to_test, reverse_heading_boundary_to_test
+    ))
 
-                            iteration = 0
-                            k = 0 
-                            graph.position_boundary = pb
-                            graph.orientation_boundary = args.orientation_boundary
-                            graph.show_tree_building = args.show_tree_building
-                            graph.delta = args.delta 
-                            graph.anti_drive_bias = args.anti_drive_bias
-                            graph.anti_drive_mode = args.anti_drive_mode
-                            graph.number_of_nodes = len(nodes)
-                            graph.shot_theta_weight = args.shot_theta_weight
-                            environment.make_obstacles()
+    repeats = args.repeat_program_num if args.repeat_program else 1
+    progress_bar_overall = tqdm(total=len(combos)*repeats, desc="Overall sweep", position=0)
 
-                            if not args.show_tree_building:
-                                print('[EVENT] Simulating the system... Please wait.')
+    for rwhb, rwrad, rvrad, pb, rvhb in combos:
+        s = 0
+        while True:
+            graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
+            if args.seed is not None:
+                if args.repeat_program is True:
+                    random.seed(s+10)
+                else:
+                    random.seed(args.seed)
+            run = True
+            clock = pygame.time.Clock()
 
-                            # Main growth loop
-                            while run and k < args.nodes:
-                                clock.tick(environment.FPS)
-                                for event in pygame.event.get():
-                                    if event.type == pygame.QUIT:
-                                        run = False
+            nodes = [Node(position=x_init[:2], orientation=math.degrees(x_init[2]), parent=0, cost=0.0)]
 
-                                # Draw all initial states
-                                obstacles = environment.draw_obstacles() if args.obstacles else []
-                                graph.draw_initial_node(map=environment.map)
-                                graph.draw_goal_node(map=environment.map)
-                                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+            iteration = 0
+            k = 0 
+            graph.position_boundary = pb
+            graph.orientation_boundary = args.orientation_boundary
+            graph.show_tree_building = args.show_tree_building
+            graph.delta = args.delta 
+            graph.anti_drive_bias = args.anti_drive_bias
+            graph.anti_drive_mode = args.anti_drive_mode
+            graph.number_of_nodes = len(nodes)
+            graph.shot_theta_weight = args.shot_theta_weight
+            graph.verbose = args.verbose
+            environment.make_obstacles()
 
-                                if args.show_tree_building:
-                                    environment.draw_trajectory_trail()
-                                
-                                # If the goal is not found
-                                if not graph.is_goal_found or not args.goal_end_program:
-                                    # Find a random node
-                                    random_parent_index = random.randint(0, len(nodes)-1)
+            if not args.show_tree_building:
+                tqdm.write('[EVENT] Simulating the system... Please wait.')
 
-                                    # The result of propgation with random control function from a random node
-                                    result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
-                                    
-                                    # If the path did not collide with something... 
-                                    if result is not None:
-                                        x_new, theta_new, trajectory_samples = result
+            progress_bar_tree = tqdm(total=args.nodes, desc=f"Growing rwhb={rwhb}, rwrad={rwrad}", position=1, leave=False)
+            # Main growth loop
+            while run and k < args.nodes:
+                clock.tick(environment.FPS)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        run = False
 
-                                        # Create new node
-                                        new_node = Node(
-                                            position=x_new,
-                                            orientation=theta_new,
-                                            parent=random_parent_index,
-                                            cost=nodes[random_parent_index].cost + graph.edge_time_duration*abs(graph.v),
-                                            control_input=(graph.v, graph.w, graph.edge_time_duration),
-                                            trajectory_samples=trajectory_samples
-                                        )
-                                        nodes.append(new_node)
-                                        new_index = len(nodes) -1
+                # Draw all initial states
+                obstacles = environment.draw_obstacles() if args.obstacles else []
+                graph.draw_initial_node(map=environment.map)
+                graph.draw_goal_node(map=environment.map)
+                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
 
-                                        assert new_node.cost >= nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
+                if args.show_tree_building:
+                    environment.draw_trajectory_trail()
+                
+                # If the goal is not found
+                if not graph.is_goal_found or not args.goal_end_program:
+                    # Find a random node
+                    random_parent_index = random.randint(0, len(nodes)-1)
 
-                                        # Update sampled config (k)
-                                        graph.number_of_nodes = len(nodes)
-                                        k += 1
-                                        print(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
+                    # The result of propgation with random control function from a random node
+                    result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
+                    
+                    # If the path did not collide with something... 
+                    if result is not None:
+                        x_new, theta_new, trajectory_samples = result
 
-                                        if args.rewire: 
-                                            graph.rewire_node(nodes=nodes, rewire_search_radius=rwrad, delta=args.delta, heading_boundary=rwhb, robot=robot)
-                                    
-                                    if args.show_new_configurations and args.show_tree_building:
-                                        # Draws a small rotated robot image at every node position added to the tree 
-                                        graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
-                                        # Draws a small brown circle at every node position
-                                        graph.draw_new_node(map=environment.map)
+                        # Create new node
+                        new_node = Node(
+                            position=x_new,
+                            orientation=theta_new,
+                            parent=random_parent_index,
+                            cost=nodes[random_parent_index].cost + graph.edge_time_duration*abs(graph.v),
+                            control_input=(graph.v, graph.w, graph.edge_time_duration),
+                            trajectory_samples=trajectory_samples
+                        )
+                        nodes.append(new_node)
+                        new_index = len(nodes) -1
 
-                                    # if goal is found
-                                    if graph.is_goal_found and args.goal_end_program:
-                                        break # Stop growing 
+                        assert new_node.cost >= nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
 
-                                    iteration += 1
-                                    pygame.display.update()
-                                    environment.map.fill(environment.WHITE)
-                                                
-                            print(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
-                            print(f"[STATS] heading_boundary of {rwhb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
+                        # Update sampled config (k)
+                        graph.number_of_nodes = len(nodes)
+                        k += 1
+                        if args.verbose:
+                            tqdm.write(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
-                            none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0])
-                            print(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
+                        if args.rewire: 
+                            graph.rewire_node(nodes=nodes, rewire_search_radius=rwrad, delta=args.delta, heading_boundary=rwhb, robot=robot)
+                    
+                    if args.show_new_configurations and args.show_tree_building:
+                        # Draws a small rotated robot image at every node position added to the tree 
+                        graph.draw_new_robot_configuration(robot_img=robot.img, environment=environment)
+                        # Draws a small brown circle at every node position
+                        graph.draw_new_node(map=environment.map)
 
-                            # --------- Reversibility Testing Start ---------
-                            graph.nodes = nodes 
-                            if args.reversibility_seed is not None:
-                                    if args.repeat_program is True:
-                                        random.seed(s if args.repeat_program else args.reversibility_seed)
-                            
-                            successes = 0
-                            failure_reasons = {}
-                            hops_for_reached_root_trials = []
-                            total_path_costs = []
-                            position_drifts = []
-                            heading_drifts = []
-                            failure_position_drifts = []
-                            average_ts = []
+                    # if goal is found
+                    if graph.is_goal_found and args.goal_end_program:
+                        break # Stop growing 
 
-                            for trial in range(args.reversibility_trials): # Test drift for MULTIPLE nodes on the SAME tree
-                                # Get the robot's starting position
-                                if args.reverse_spawn_mode == 'node':
-                                    random_node_index = random.randint(1, len(nodes)-1)
-                                    start_node = nodes[random_node_index]
-                                    start_x, start_y, start_theta_deg = start_node.position[0], start_node.position[1], start_node.orientation
-                                elif args.reverse_spawn_mode == 'map':
-                                    start_x = random.uniform(0, MAP_DIMENSIONS[0])
-                                    start_y = random.uniform(0, MAP_DIMENSIONS[1])
-                                    start_theta_deg = random.uniform(0, 360)
-                                else: # tree box
-                                    xs = [n.position[0] for n in nodes]
-                                    ys = [n.position[1] for n in nodes]
-                                    start_x = random.uniform(min(xs), max(xs))
-                                    start_y = random.uniform(min(ys), max(ys))
-                                    start_theta_deg = random.uniform(0,360)
+                    iteration += 1
+                    pygame.display.update()
+                    environment.map.fill(environment.WHITE)
 
-                                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
-                                average_ts.append(average_t)
-                                position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
-                                heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
+            progress_bar_tree.close()
+            none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0]) 
+            if args.verbose:
+                tqdm.write(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
+                tqdm.write(f"[STATS] heading_boundary of {rwhb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
+                tqdm.write(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
 
-                                print(f"[REVERSE] trial={trial}, spawn_mode={args.reverse_spawn_mode}, success={success}, reason={reason}, hops={n_hops}, cost={total_path_cost}, drift={position_drift}")
+            # --------- Reversibility Testing Start ---------
+            graph.nodes = nodes 
+            if args.reversibility_seed is not None:
+                    if args.repeat_program is True:
+                        random.seed(s if args.repeat_program else args.reversibility_seed)
+            
+            successes = 0
+            failure_reasons = {}
+            hops_for_reached_root_trials = []
+            total_path_costs = []
+            position_drifts = []
+            heading_drifts = []
+            failure_position_drifts = []
+            average_ts = []
 
-                                if success:
-                                    successes += 1
-                                    hops_for_reached_root_trials.append(n_hops)
-                                    total_path_costs.append(total_path_cost)
-                                    position_drifts.append(position_drift)
-                                    heading_drifts.append(heading_drift)
-                                else:
-                                    failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
-                                    failure_position_drifts.append(position_drift)
+            for trial in tqdm(range(args.reversibility_trials), desc=f"Reversibility trials", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
+                # Get the robot's starting position
+                if args.reverse_spawn_mode == 'node':
+                    random_node_index = random.randint(1, len(nodes)-1)
+                    start_node = nodes[random_node_index]
+                    start_x, start_y, start_theta_deg = start_node.position[0], start_node.position[1], start_node.orientation
+                elif args.reverse_spawn_mode == 'map':
+                    start_x = random.uniform(0, MAP_DIMENSIONS[0])
+                    start_y = random.uniform(0, MAP_DIMENSIONS[1])
+                    start_theta_deg = random.uniform(0, 360)
+                else: # tree box
+                    xs = [n.position[0] for n in nodes]
+                    ys = [n.position[1] for n in nodes]
+                    start_x = random.uniform(min(xs), max(xs))
+                    start_y = random.uniform(min(ys), max(ys))
+                    start_theta_deg = random.uniform(0,360)
 
-                            avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
-                            avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
-                            avg_position_drift = sum(position_drifts)/len(position_drifts) if position_drifts else None
-                            success_rate = successes/args.reversibility_trials
-                            avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
-                            avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
-                            #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
-                            mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
-                            max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
-                            print(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
-                            print("[REVERSE] failure breakdown:")
-                            for reason, count in failure_reasons.items():
-                                print(f"    {reason}: {count}")
+                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
+                average_ts.append(average_t)
+                position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
+                heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
+                
+                if args.verbose:
+                    tqdm.write(f"[REVERSE] trial={trial}, spawn_mode={args.reverse_spawn_mode}, success={success}, reason={reason}, hops={n_hops}, cost={total_path_cost}, drift={position_drift}")
 
-                            # --------- Reversibility Testing End --------- 
+                if success:
+                    successes += 1
+                    hops_for_reached_root_trials.append(n_hops)
+                    total_path_costs.append(total_path_cost)
+                    position_drifts.append(position_drift)
+                    heading_drifts.append(heading_drift)
+                else:
+                    failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+                    failure_position_drifts.append(position_drift)
 
-                            if graph.is_goal_found:
-                                goal_indices = []
-                                for i, n in enumerate(nodes):
-                                    if graph.is_goal_reached(n.position, n.orientation):
-                                        goal_indices.append(i)
-                                
-                                min_cost = None
-                                min_index = None
-                                for i in goal_indices:
-                                    if min_cost is None or nodes[i].cost < min_cost:
-                                        min_cost = nodes[i].cost
-                                        min_index = i
-                                
-                                graph.goal_configuration = min_index    
-                                graph.nodes = nodes # Attaches growing node list to graph.node
-                                # Get the list of node IDs of the winning route
-                                graph.path_to_goal() 
-                                # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
-                                graph.get_path_coordinates()
+            avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
+            avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
+            avg_position_drift = sum(position_drifts)/len(position_drifts) if position_drifts else None
+            success_rate = successes/args.reversibility_trials
+            avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
+            avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
+            #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
+            mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
+            max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
+            if args.verbose:
+                tqdm.write(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
+                tqdm.write("[REVERSE] failure breakdown:")
+                for reason, count in failure_reasons.items():
+                    tqdm.write(f"    {reason}: {count}")
 
-                                flat_thetas = []
-                                for segment in graph.theta_final_path[1:]:
-                                    flat_thetas.extend(segment)
-                                
-                                jumps = []
-                                for i in range(len(flat_thetas)-1):
-                                    current_theta = flat_thetas[i]
-                                    next_theta = flat_thetas[i+1]
+            # --------- Reversibility Testing End --------- 
 
-                                    jump = graph.angle_difference(current_theta, next_theta)
-                                    jumps.append(jump)
+            if graph.is_goal_found:
+                goal_indices = []
+                for i, n in enumerate(nodes):
+                    if graph.is_goal_reached(n.position, n.orientation):
+                        goal_indices.append(i)
+                
+                min_cost = None
+                min_index = None
+                for i in goal_indices:
+                    if min_cost is None or nodes[i].cost < min_cost:
+                        min_cost = nodes[i].cost
+                        min_index = i
+                
+                graph.goal_configuration = min_index    
+                graph.nodes = nodes # Attaches growing node list to graph.node
+                # Get the list of node IDs of the winning route
+                graph.path_to_goal() 
+                # Use node IDs to make (x,y) coordinate pairs and recover step-by-step movement data
+                graph.get_path_coordinates()
 
-                                max_jump = max(jumps)
-                                total_variation = sum(jumps)
-                                avg_jump = total_variation/len(jumps)
-                                physical_ceiling = math.degrees(0.5*args.delta)
-                                print(f"[STATS] producing a final_path_cost={nodes[graph.goal_configuration].cost:.2f}")
-                                print(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
-                                final_cost = nodes[graph.goal_configuration].cost
-                            else:
-                                print("[STATS] Goal not found this run.")
-                                final_cost = None
+                flat_thetas = []
+                for segment in graph.theta_final_path[1:]:
+                    flat_thetas.extend(segment)
+                
+                jumps = []
+                for i in range(len(flat_thetas)-1):
+                    current_theta = flat_thetas[i]
+                    next_theta = flat_thetas[i+1]
+
+                    jump = graph.angle_difference(current_theta, next_theta)
+                    jumps.append(jump)
+
+                max_jump = max(jumps)
+                total_variation = sum(jumps)
+                avg_jump = total_variation/len(jumps)
+                physical_ceiling = math.degrees(0.5*args.delta)
+                if args.verbose:
+                    tqdm.write(f"[STATS] producing a final_path_cost={nodes[graph.goal_configuration].cost:.2f}")
+                    tqdm.write(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
+                final_cost = nodes[graph.goal_configuration].cost
+            else:
+                if args.verbose:
+                    tqdm.write("[STATS] Goal not found this run.")
+                final_cost = None
 
 
-                            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
-                            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift)
-                                
-                            if not(args.repeat_program and s+1 < args.repeat_program_num):
-                                break
-                            s+=1
+            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
+            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift)
+                
+            if not(args.repeat_program and s+1 < args.repeat_program_num):
+                break
+            s+=1
+        
+    progress_bar_overall.close()
 
     if args.repeat_program == False:
         if not args.show_tree_building:

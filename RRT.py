@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from node import Node
+from tqdm import tqdm
 
 class Graph():
     """
@@ -104,7 +105,8 @@ class Graph():
         x_init, y_init = self.last_position
         theta_init = math.radians(self.last_orientation)
 
-        print(f"[DEBUG] simulate() starting from {self.last_position} with chosen parent tree[{random_parent_index}]")
+        if self.verbose:
+            tqdm.write(f"[DEBUG] simulate() starting from {self.last_position} with chosen parent tree[{random_parent_index}]")
 
         if random.uniform(0,100) < self.anti_drive_bias:
             if self.anti_drive_mode == 'stop':
@@ -270,7 +272,8 @@ class Graph():
         rewire_error = math.hypot(xs[-1] - new_node.position[0], ys[-1] - new_node.position[1])
         self.rewire_errors.append(rewire_error)
 
-        print(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
+        if self.verbose:
+            tqdm.write(f"[REWIRE] node {new_node_index}: parent {old_parent} --> {new_node.parent}, cost {old_cost:.3f} --> {new_node.cost:.3f}")
 
     def interpolate_connection(self, start_x, start_y, start_theta, end_x, end_y, end_theta, delta):
         """
@@ -355,7 +358,8 @@ class Graph():
                 self.y_final_path.append(ys)
                 self.theta_final_path.append(thetas)
         
-        print(f"[DEBUG] path_coordinates: {len(self.path_coordinates)}, x_final_path: {len(self.x_final_path)}")
+        if self.verbose:
+            tqdm.write(f"[DEBUG] path_coordinates: {len(self.path_coordinates)}, x_final_path: {len(self.x_final_path)}")
         return self.path_coordinates
 
     def is_goal_reached(self, position, orientation_deg):
@@ -717,7 +721,8 @@ class Graph():
             index, cost = nearest_qualifying_node
             visited_indices.add(index)
             v, w, t = nodes[index].control_input
-            print(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
+            if self.verbose:
+                tqdm.write(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
             selected_t_values.append(t)
             steps_in_edge = int(t/self.delta)
             committed_full_hop = True
@@ -762,7 +767,8 @@ class Graph():
 
                         if mid_index != index and candidate_score < current_score:
                             visited_indices.add(mid_index)
-                            print(f"[DEBUG-REV-SWITCH] k={k}, pos=({x_new:.1f},{y_new:.1f}): dropping node {index} for {mid_index}, making: dist_now({distance_to_root_now:.1f}) --> {mid_distance_to_root:.1f}")
+                            if self.verbose:
+                                tqdm.write(f"[DEBUG-REV-SWITCH] k={k}, pos=({x_new:.1f},{y_new:.1f}): dropping node {index} for {mid_index}, making: dist_now({distance_to_root_now:.1f}) --> {mid_distance_to_root:.1f}")
                             x, y, theta = x_new, y_new, theta_new
                             index = mid_index
 
@@ -782,10 +788,11 @@ class Graph():
             dist_to_true_parent = math.hypot(x - true_parent.position[0], y - true_parent.position[1])
             heading_diff = self.angle_difference(true_parent.orientation, math.degrees(theta))
             final_distance_to_root = math.hypot(x - root.position[0], y - root.position[1])
-            print(f"[DEBUG-REV]   node {index}'s TRUE parent is {true_parent_idx} (dist_to_root={final_distance_to_root:.2f}), "
-            f"distance from actual landing={dist_to_true_parent:.2f}px (current radius={reverse_search_radius}), "
-            f"heading_diff={heading_diff:.2f}deg (current boundary={reverse_heading_boundary})")
-            print(f"[DEBUG-REV-DRIFT] hop={n_hops}, pos=({x:.1f}, {y:.2f}), distance_to_root={final_distance_to_root:.1f}")
+            if self.verbose:
+                tqdm.write(f"[DEBUG-REV]   node {index}'s TRUE parent is {true_parent_idx} (dist_to_root={final_distance_to_root:.2f}), "
+                f"distance from actual landing={dist_to_true_parent:.2f}px (current radius={reverse_search_radius}), "
+                f"heading_diff={heading_diff:.2f}deg (current boundary={reverse_heading_boundary})")
+                tqdm.write(f"[DEBUG-REV-DRIFT] hop={n_hops}, pos=({x:.1f}, {y:.2f}), distance_to_root={final_distance_to_root:.1f}")
 
             if committed_full_hop:
                 x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
