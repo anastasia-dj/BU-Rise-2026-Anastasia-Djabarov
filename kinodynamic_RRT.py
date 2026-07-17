@@ -164,7 +164,7 @@ def main():
             graph.verbose = args.verbose
             environment.make_obstacles()
 
-            if not args.show_tree_building:
+            if not args.show_tree_building and args.verbose:
                 tqdm.write('[EVENT] Simulating the system... Please wait.')
 
             progress_bar_tree = tqdm(total=args.nodes, desc=f"Growing rwhb={rwhb}, rwrad={rwrad}", position=1, leave=False)
@@ -214,6 +214,7 @@ def main():
                         # Update sampled config (k)
                         graph.number_of_nodes = len(nodes)
                         k += 1
+                        progress_bar_tree.update(1)
                         if args.verbose:
                             tqdm.write(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
@@ -256,7 +257,7 @@ def main():
             failure_position_drifts = []
             average_ts = []
 
-            for trial in tqdm(range(args.reversibility_trials), desc=f"Reversibility trials", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
+            for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
                 if args.reverse_spawn_mode == 'node':
                     random_node_index = random.randint(1, len(nodes)-1)
@@ -356,7 +357,9 @@ def main():
 
             file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift)
-                
+            
+            progress_bar_overall.update(1)
+
             if not(args.repeat_program and s+1 < args.repeat_program_num):
                 break
             s+=1
