@@ -717,12 +717,14 @@ class Graph():
             index, cost = nearest_qualifying_node
             visited_indices.add(index)
             v, w, t = nodes[index].control_input
+            print(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
             selected_t_values.append(t)
             steps_in_edge = int(t/self.delta)
             committed_full_hop = True
             k=0
 
             while True:
+                committed_full_hop = True
                 for k in range(1, steps_in_edge+1):
                     x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
                     distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
@@ -745,10 +747,21 @@ class Graph():
                         mid_index, mid_cost = mid_found
                         mid_v, mid_w, mid_t = nodes[mid_index].control_input
                         mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
-                        mid_distance_to_root =  math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
+                        
+                        
+                        if selection_mode == 'root':
+                            current_score = distance_to_root_now
+                            candidate_score = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
+                        elif selection_mode == 'cost':
+                            current_score = nodes[index].cost
+                            candidate_score = nodes[mid_index].cost
+                        elif selection_mode: # 'robot'
+                            current_score = 0.0 
+                            candidate_score = math.hypot(mid_landing_x - x_new, mid_landing_y - y_new)
 
-                        if mid_distance_to_root < distance_to_root_now:
+                        if mid_index != index and candidate_score < current_score:
                             visited_indices.add(mid_index)
+                            print(f"[DEBUG-REV-SWITCH] k={k}, pos=({x_new:.1f},{y_new:.1f}): dropping node {index} for {mid_index}, making: dist_now({distance_to_root_now:.1f}) --> {mid_distance_to_root:.1f}")
                             x, y, theta = x_new, y_new, theta_new
                             index = mid_index
 
@@ -771,6 +784,7 @@ class Graph():
             print(f"[DEBUG-REV]   node {index}'s TRUE parent is {true_parent_idx} (dist_to_root={final_distance_to_root:.2f}), "
             f"distance from actual landing={dist_to_true_parent:.2f}px (current radius={reverse_search_radius}), "
             f"heading_diff={heading_diff:.2f}deg (current boundary={reverse_heading_boundary})")
+            print(f"[DEBUG-REV-DRIFT] hop={n_hops}, pos=({x:.1f}, {y:.2f}), distance_to_root={final_distance_to_root:.1f}")
 
             if committed_full_hop:
                 x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
