@@ -748,7 +748,8 @@ class Graph():
                         mid_v, mid_w, mid_t = nodes[mid_index].control_input
                         mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
                         
-                        
+                        mid_distance_to_root = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
+
                         if selection_mode == 'root':
                             current_score = distance_to_root_now
                             candidate_score = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
