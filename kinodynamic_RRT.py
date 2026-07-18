@@ -73,7 +73,7 @@ parser.add_argument('-rw', '--rewire', type=bool,
 	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
 	help='Rewires the tree nodes.')
 parser.add_argument('-rwhb', '--rewire_heading_boundary', type=float, metavar='', required=False,
-	default=180, help='The boundary of the heading difference which is used in rewiring..')
+	default=180, help='The boundary of the heading difference which is used in rewiring.')
 parser.add_argument('-rwhbl', '--rewire_heading_boundary_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of heading_boundary values to sweep automatically: e.g. -rwhbl 15 20 25 30')
 parser.add_argument('-rwrad', '--rewire_search_radius', type=float, metavar='', required=False,
@@ -91,9 +91,9 @@ parser.add_argument('-rvhbl', '--reverse_heading_boundary_list', nargs='+', type
 
 # Reversibility configurations
 parser.add_argument('-rvhb', '--reverse_heading_boundary', type=float, metavar='', required=False,
-	default=180, help='The boundary of the heading difference which is used in rewiring..')
+	default=180, help='The boundary of the heading difference which is used in reversing.')
 parser.add_argument('-rvrad', '--reverse_search_radius', type=float, metavar='', required=False,
-	default=10, help='The search radius of the robot when deciding which node to rewire.')
+	default=10, help='The search radius of the robot when deciding which node to reverse.')
 parser.add_argument('-rvt', '--reversibility_trials', type=int, metavar='', required=False, default=30,
 	help='Number of reversibility trials to do..')
 parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
@@ -103,7 +103,8 @@ parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node
 parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['root', 'robot', 'cost'],
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
 parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=False, help='Exclude already-selected nodes from future searches during reversal.')
-
+parser.add_argument('-ms', '--max_steps', type=float, metavar='', required=False,
+	default=1000, help='The max steps taken in reversing.')
 # Quality of life
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=True, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
 
@@ -167,6 +168,7 @@ def main():
             graph.shot_theta_weight = args.shot_theta_weight
             graph.verbose = args.verbose
             graph.v_magnitude = args.v_magnitude
+            graph.max_steps = args.max_steps
             environment.make_obstacles()
 
             if not args.show_tree_building and args.verbose:
@@ -268,23 +270,24 @@ def main():
 
             for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
-                if args.reverse_spawn_mode == 'node':
-                    random_node_index = random.randint(1, len(nodes)-1)
-                    start_node = nodes[random_node_index]
-                    start_x, start_y, start_theta_deg = start_node.position[0], start_node.position[1], start_node.orientation
-                elif args.reverse_spawn_mode == 'map':
-                    start_x = random.uniform(0, MAP_DIMENSIONS[0])
-                    start_y = random.uniform(0, MAP_DIMENSIONS[1])
-                    start_theta_deg = random.uniform(0, 360)
-                elif args.reverse_spawn_mode == 'tree_box': # tree box
-                    xs = [n.position[0] for n in nodes]
-                    ys = [n.position[1] for n in nodes]
-                    start_x = random.uniform(min(xs), max(xs))
-                    start_y = random.uniform(min(ys), max(ys))
-                    start_theta_deg = random.uniform(0,360)
-
-                if math.hypot(start_x - nodes[0].position[0], start_y - nodes[0].position[1]) < pb:  # Don't count "lucky" spawns
-                    break     
+                while True: 
+                    if args.reverse_spawn_mode == 'node':
+                        random_node_index = random.randint(1, len(nodes)-1)
+                        start_node = nodes[random_node_index]
+                        start_x, start_y, start_theta_deg = start_node.position[0], start_node.position[1], start_node.orientation
+                    elif args.reverse_spawn_mode == 'map':
+                        start_x = random.uniform(0, MAP_DIMENSIONS[0])
+                        start_y = random.uniform(0, MAP_DIMENSIONS[1])
+                        start_theta_deg = random.uniform(0, 360)
+                    elif args.reverse_spawn_mode == 'tree_box': # tree box
+                        xs = [n.position[0] for n in nodes]
+                        ys = [n.position[1] for n in nodes]
+                        start_x = random.uniform(min(xs), max(xs))
+                        start_y = random.uniform(min(ys), max(ys))
+                        start_theta_deg = random.uniform(0,360)
+                    
+                    if math.hypot(start_x - nodes[0].position[0], start_y - nodes[0].position[1]) > pb:  # Don't count "lucky" spawns
+                        break    
 
                 success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
                 average_ts.append(average_t)
@@ -371,7 +374,7 @@ def main():
                 final_cost = None
 
 
-            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}_Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_ADB{args.anti_drive_bias}.csv"
+            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}_Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_ADB{args.anti_drive_bias}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
