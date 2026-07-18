@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 class Graph():
     """
-    Class for RRT
+    Class for Graph.
 
     start : tuple (init x, y, theta)
     goal : tuple (final x, y, theta)
@@ -26,7 +26,7 @@ class Graph():
         self.candidates_in_radius = 0
         self.rewire_errors = []
         self.candidates_blocked_by_heading = 0
-        self.v_magnitude = 10
+        self.children_count = [0]
 
         self.robot_position_history = []
         self.robot_orientation_history = []
@@ -259,7 +259,9 @@ class Graph():
         candidate_node = nodes[candidate_index]
         candidate_t = (j+1)*delta # Time to the position
 
+        self.children_count[new_node.parent] -= 1 # Old parent is losing child
         new_node.parent = candidate_node.parent # Make new_node the sibling of the parent
+        self.children_count[new_node.parent] += 1 # New parent is gaining child
         new_node.control_input = (candidate_v, candidate_w, candidate_t)
         new_node.cost = best_cost
 
@@ -861,9 +863,9 @@ class Graph():
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
                 if selection_mode == 'root':
                     score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
-                if selection_mode == 'cost':
+                elif selection_mode == 'cost':
                     score=n.cost
-                else: # 'robot'
+                elif selection_mode == 'robot': # 'robot'
                     score = distance
                 if best is None or score < best[1]:
                     best = (i, score)
@@ -874,7 +876,7 @@ class Graph():
         root = nodes[root_index]
         return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
     
-    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift):
+    def log_results(self, file_name, run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -892,7 +894,7 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift"])
+                writer.writerow(["run_number", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift", "stuck_no_candidate_count", "max_steps_exceeded_count"])
                 file_exists = True
-            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift])
+            writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count])
 

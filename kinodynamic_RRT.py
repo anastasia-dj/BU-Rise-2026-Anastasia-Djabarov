@@ -19,7 +19,7 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 
-# Original kRRT command lines
+# Tree building
 parser = argparse.ArgumentParser(description='kRRT algorithm for a car-like robot.')
 parser.add_argument('-o', '--obstacles', type=bool, action=argparse.BooleanOptionalAction,
 	metavar='', required=False, help='Obstacles on the map')
@@ -51,6 +51,10 @@ parser.add_argument('-stb', '--show_tree_building', type=bool,
 	help='Shows the simulation forward in time')
 parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
 	help='Seed of the random numbers taken.')
+parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=False, default=10,
+	help='Constant forward speed magnitude.')
+parser.add_argument('-cwe', '--children_weight_exponent', type=float, metavar='', required=False, default=0.0,
+	help='Exponent on children weighting when sampling a parent to extend (Exponent on the inverse of the number of childrem, 0 = NO bias)')
 
 # Anti-drive
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=0,
@@ -162,6 +166,7 @@ def main():
             graph.number_of_nodes = len(nodes)
             graph.shot_theta_weight = args.shot_theta_weight
             graph.verbose = args.verbose
+            graph.v_magnitude = args.v_magnitude
             environment.make_obstacles()
 
             if not args.show_tree_building and args.verbose:
@@ -188,7 +193,9 @@ def main():
                 # If the goal is not found
                 if not graph.is_goal_found or not args.goal_end_program:
                     # Find a random node
-                    random_parent_index = random.randint(0, len(nodes)-1)
+                    weights = [1.0/((1+graph.children_count[i])**args.children_weight_exponent) for i in range(len(nodes))] # = (1/children_count)*^exp for each node
+                    weighted_random_number = random.choices(range(len(nodes)), weights=weights, k=1)
+                    random_parent_index = weighted_random_number[0]
 
                     # The result of propgation with random control function from a random node
                     result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
@@ -208,9 +215,11 @@ def main():
                         )
                         nodes.append(new_node)
                         new_index = len(nodes) -1
+                        graph.children_count.append(0) # Add a new node with 0 children
+                        graph.children_count[random_parent_index] += 1 
 
-                        assert new_node.cost >= nodes[new_node.parent].cost, f"cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
-
+                        assert new_node.cost >= nodes[new_node.parent].cost, f"Cost did not increase from parent ({nodes[new_node.parent].cost}) to child ({new_node.cost})"
+                        
                         # Update sampled config (k)
                         graph.number_of_nodes = len(nodes)
                         k += 1
@@ -267,12 +276,15 @@ def main():
                     start_x = random.uniform(0, MAP_DIMENSIONS[0])
                     start_y = random.uniform(0, MAP_DIMENSIONS[1])
                     start_theta_deg = random.uniform(0, 360)
-                else: # tree box
+                elif args.reverse_spawn_mode == 'tree_box': # tree box
                     xs = [n.position[0] for n in nodes]
                     ys = [n.position[1] for n in nodes]
                     start_x = random.uniform(min(xs), max(xs))
                     start_y = random.uniform(min(ys), max(ys))
                     start_theta_deg = random.uniform(0,360)
+
+                if math.hypot(start_x - nodes[0].position[0], start_y - nodes[0].position[1]) < pb:  # Don't count "lucky" spawns
+                    break     
 
                 success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
                 average_ts.append(average_t)
@@ -301,6 +313,10 @@ def main():
             #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
             mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
             max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
+
+            stuck_no_candidate_count = failure_reasons.get('stuck_no_candidate', 0)
+            max_steps_exceeded_count = failure_reasons.get('max_steps_exceeded', 0)
+
             if args.verbose:
                 tqdm.write(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                 tqdm.write("[REVERSE] failure breakdown:")
@@ -355,8 +371,8 @@ def main():
                 final_cost = None
 
 
-            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}.csv"
-            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift)
+            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}_Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_ADB{args.anti_drive_bias}.csv"
+            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
 
