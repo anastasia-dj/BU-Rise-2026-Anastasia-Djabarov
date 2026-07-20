@@ -4,8 +4,10 @@ import math
 import csv
 import os 
 import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+try:
+    matplotlib.use('macosx')   # Because I am using mac in the dorms
+except Exception:
+    pass
 from node import Node
 from tqdm import tqdm
 
@@ -270,6 +272,7 @@ class Graph():
         parent_node = nodes[new_node.parent]
         xs,ys,thetas_rad = robot.generate_arc_samples(parent_node.position[0], parent_node.position[1], math.radians(parent_node.orientation), candidate_v, candidate_w, candidate_t, delta)
         new_node.trajectory_samples = (xs,ys,[math.degrees(t) for t in thetas_rad])
+        #new_node.orientation = math.degrees(thetas_rad[-1]) # TODO: Discuss with Professor Tron
 
         rewire_error = math.hypot(xs[-1] - new_node.position[0], ys[-1] - new_node.position[1])
         self.rewire_errors.append(rewire_error)
@@ -676,7 +679,7 @@ class Graph():
         path.append(0)
         return path
 
-    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, use_visited, root_index=0, max_steps=self.max_steps, max_non_improving_hops=1000):
+    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, use_visited, root_index=0, use_samples=False, max_steps=1000, max_non_improving_hops=1000):
         """
         Off-branch reversal. At every step, search the robot's current position and heading. Find the nearest node and reverse its control input. 
         PARAMETERS
@@ -704,6 +707,7 @@ class Graph():
         arrived_at_goal = False
         #non_improving_streak = 0
         selected_t_values = []
+        pose_path = [(x, y, math.degrees(theta))]
 
         
         for step in range(max_steps):
@@ -711,18 +715,18 @@ class Graph():
             if self.reached_root(nodes, root_index, x, y, position_threshold):
                 arrived_at_goal = True
                 average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root'
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root', pose_path
             
-            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited)
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
                 average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'stuck_no_candidate'
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'stuck_no_candidate', pose_path
             
-            index, cost = nearest_qualifying_node
+            index, cost, j = nearest_qualifying_node
             visited_indices.add(index)
-            v, w, t = nodes[index].control_input
+            v, w, t = self.resolve_truncated_control(nodes[index], j)
             if self.verbose:
                 tqdm.write(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
             selected_t_values.append(t)
@@ -734,6 +738,7 @@ class Graph():
                 committed_full_hop = True
                 for k in range(1, steps_in_edge+1):
                     x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
+                    pose_path.append((x_new, y_new, math.degrees(theta_new)))
                     distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
 
                     # if previous_distance_to_root is not None and not (distance_to_root_now < previous_distance_to_root):
@@ -746,13 +751,13 @@ class Graph():
                     # Check if root is reached
                     if self.reached_root(nodes, root_index, x_new, y_new, position_threshold):
                         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root'
+                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root', pose_path
 
-                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited)
+                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples)
 
                     if mid_found is not None:
-                        mid_index, mid_cost = mid_found
-                        mid_v, mid_w, mid_t = nodes[mid_index].control_input
+                        mid_index, mid_cost, mid_j = mid_found
+                        mid_v, mid_w, mid_t = self.resolve_truncated_control(nodes[mid_index], mid_j)
                         mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
                         
                         mid_distance_to_root = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
@@ -798,6 +803,7 @@ class Graph():
 
             if committed_full_hop:
                 x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
+                pose_path.append((x, y, math.degrees(theta)))
                 total_path_cost += t*abs(v)
             else: 
                 total_path_cost += k *self.delta * abs(v)
@@ -807,7 +813,7 @@ class Graph():
             previous_distance_to_root = distance_to_root_final
         
         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_steps_exceeded'
+        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_steps_exceeded', pose_path
 
     # NOTE: RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
@@ -840,12 +846,13 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited):
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples):
         """
         Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
         The root is not included.
 
-        selection_mode : str ('root' or 'robot')
+        selection_mode : str ('cost', 'root', 'robot)
+            - 'cost', pick cheapest
             - 'root', pick whichever is closest to the root
             - 'robot, pick whichever is closest to the robot
 
@@ -855,20 +862,45 @@ class Graph():
             (Of the lowest cost real node within both reverse_search_radius and reverse_heading_boundary)
         """
         best = None
+
         for i, n in enumerate(nodes):
-            #TODO: visited_indicies is off
             if i == root_index or (use_visited and i in visited_indices):
                 continue # Exclude the root index
-            distance = math.hypot(n.position[0]-x, n.position[1]-y)
+            if n.trajectory_samples is None or n.control_input is None:
+                continue # Ignore the root index (just to make sure)
+            
+            xs,ys,thetas = n.trajectory_samples
+            v_full, w_full, t_full = n.control_input
+            last_j = len(xs)-1
+
+            # Check samples
+            if use_samples:
+                for j in range(len(xs)):
+                    distance = math.hypot(xs[j] - x, ys[j] - y)
+                    if distance <= reverse_search_radius and self.angle_difference(thetas[j], theta_deg) <= reverse_heading_boundary:
+                        elapsed = t_full if j == last_j else (j + 1) * self.delta
+                        mismatch = self.angle_difference(thetas[j], theta_deg) 
+                        if selection_mode == 'root':
+                            score = math.hypot(xs[j] - root.position[0], ys[j] - root.position[1]) + self.heading_weight * mismatch
+                        elif selection_mode == 'cost':
+                            score = nodes[n.parent].cost + elapsed * abs(v_full) + self.heading_weight * mismatch
+                        elif selection_mode == 'robot':
+                            score = distance + self.heading_weight * mismatch
+                        if best is None or score < best[1]:
+                            best = (i, score, j)
+
+            # Check nodes
+            distance = math.hypot(n.position[0] - x, n.position[1] - y)
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
                 if selection_mode == 'root':
                     score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
                 elif selection_mode == 'cost':
-                    score=n.cost
-                elif selection_mode == 'robot': # 'robot'
+                    score = n.cost                      
+                elif selection_mode == 'robot':
                     score = distance
                 if best is None or score < best[1]:
-                    best = (i, score)
+                    best = (i, score, last_j) 
+                
         return best
     
     def reached_root(self, nodes, root_index, x, y, position_threshold):
@@ -898,3 +930,63 @@ class Graph():
                 file_exists = True
             writer.writerow([run_number, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count])
 
+    def resolve_truncated_control(self, node, j):
+        """
+        Enforcing the constant truncation across samples j. 
+        """
+        v, w, t_full = node.control_input
+        xs, ys, thetas = node.trajectory_samples
+        t = t_full if j == len(xs) - 1 else (j + 1) * self.delta
+        return v, w, t
+    
+    def draw_reversal_trials(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, delay_ms=2, stride=4):
+        """
+        Replays one finished reversibility trial as an animation.
+        PARAMETERS
+           pose_path : list of (x, y, theta_deg), every substep configuration
+           success : bool, decides the verdict ring color at the end
+           start_pose : (x, y) where the robot spawned (blue dot marker)
+           search_radius : rvrad, radius of the live orange ring
+           delay_ms : per-frame pause during the normal (fast) portion
+           stride : draw every Nth pose, pacing control so long trials don't take minutes to play
+        """
+        trail = []
+        n_frames = len(pose_path)
+        for f in range(0, n_frames, stride):
+            x, y, theta_deg = pose_path[f]
+            # Play last couple frames slower:
+            in_finale = f > n_frames - max(80, n_frames // 10)
+
+            #Rebuild the backdrop for each frame
+            environment.map.fill(self.WHITE)
+            self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
+            self.draw_initial_robot_configuration(robot.init, environment=environment)   # root marker
+            pygame.draw.circle(environment.map, (0, 120, 255), (int(start_pose[0]), int(start_pose[1])), 5)
+            
+            # Visualizing the robot, robot's trail and search radius
+            trail.append((int(x), int(y)))
+            for px, py in trail[::3]:
+                pygame.draw.circle(environment.map, (160, 160, 220), (px, py), 1)
+            pygame.draw.circle(environment.map, self.BLUE, (int(x), int(y)), int(search_radius), width=1)    
+
+            for i, n in enumerate(nodes):
+                if i == 0 or n.trajectory_samples is None:
+                    continue
+                if self.use_samples: 
+                    xs,ys,thetas = n.trajectory_samples
+                    for q in range(len(xs)):
+                        if math.hypot(xs[q] - x, ys[q] - y) <= search_radius:
+                            is_allowed = self.angle_difference(thetas[q], theta_deg) <= heading_boundary
+                            pygame.draw.circle(environment.map, self.GREEN if is_allowed else self.RED, (int(xs[q]), int(ys[q])), 2)
+                else:
+                    if math.hypot(n.position[0] - x, n.position[1] - y) <= search_radius:
+                        is_allowed = self.angle_difference(n.orientation, theta_deg) <= heading_boundary
+                        pygame.draw.circle(environment.map, self.GREEN if is_allowed else self.RED, (int(n.position[0]), int(n.position[1])), 3)
+            self.draw_robot_configuration(image=robot.img, position=(x, y), orientation=theta_deg, environment=environment)
+            pygame.display.update()
+            pygame.time.delay(30 if in_finale else delay_ms)
+        
+        color = self.GREEN if success else self.RED
+        pygame.draw.circle(environment.map, color, (int(x), int(y)), 14, width=3)
+        pygame.display.update()
+        pygame.time.delay(1200)

@@ -55,6 +55,8 @@ parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=F
 	help='Constant forward speed magnitude.')
 parser.add_argument('-cwe', '--children_weight_exponent', type=float, metavar='', required=False, default=0.0,
 	help='Exponent on children weighting when sampling a parent to extend (Exponent on the inverse of the number of childrem, 0 = NO bias)')
+parser.add_argument('-s3d', '--show_3d', action=argparse.BooleanOptionalAction, default=False,
+    help='Show the matplotlib 3D tree at the end of tree generation.')
 
 # Anti-drive
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=0,
@@ -103,10 +105,17 @@ parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node
 parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['root', 'robot', 'cost'],
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
 parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=False, help='Exclude already-selected nodes from future searches during reversal.')
-parser.add_argument('-ms', '--max_steps', type=float, metavar='', required=False,
+parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False,
 	default=1000, help='The max steps taken in reversing.')
+parser.add_argument('-srvt', '--show_reversal_trials', type=str, choices=['off', 'all', 'failures', 'successes'], metavar='', required=False, default='off', help='Draw the reversal trials after running.')
+parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=0.0,
+	help='Weight (px per degree) applied to heading mismatch in reversal candidate scoring. 0 = pure pass/fail filter (original behavior).')
+
+parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOptionalAction, default=False,
+    help='During reversal, search every trajectory sample along each edge instead of only node endpoints.')
+
 # Quality of life
-parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=True, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
+parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
 
 args = parser.parse_args()
 
@@ -169,6 +178,8 @@ def main():
             graph.verbose = args.verbose
             graph.v_magnitude = args.v_magnitude
             graph.max_steps = args.max_steps
+            graph.use_samples = args.reverse_use_samples
+            graph.reverse_heading_weight = args.reverse_heading_weight
             environment.make_obstacles()
 
             if not args.show_tree_building and args.verbose:
@@ -289,7 +300,7 @@ def main():
                     if math.hypot(start_x - nodes[0].position[0], start_y - nodes[0].position[1]) > pb:  # Don't count "lucky" spawns
                         break    
 
-                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited)                
+                success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason, pose_path = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited, use_samples=args.reverse_use_samples, max_steps=args.max_steps)                
                 average_ts.append(average_t)
                 position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
                 heading_drift = graph.angle_difference(final_theta, nodes[0].orientation)
@@ -306,6 +317,14 @@ def main():
                 else:
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
                     failure_position_drifts.append(position_drift)
+                
+                # Check argument passed
+                show_this = (args.show_reversal_trials == 'all' or (args.show_reversal_trials == 'failures' and not success) or (args.show_reversal_trials == 'successes' and success))
+                if show_this and not args.repeat_program:
+                    # Show the screen
+                    if not args.show_tree_building:
+                        environment.show_screen()
+                    graph.draw_reversal_trials(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb)
 
             avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
             avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
@@ -374,7 +393,7 @@ def main():
                 final_cost = None
 
 
-            file_name = f"Mode{args.reverse_selection_mode}_Visited{args.use_visited}_HeadingBound{rwhb}_Search_Radius{rwrad}_ReverseRadius{rvrad}_PosBound{pb}_ReverseHB{rvhb}_Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_ADB{args.anti_drive_bias}_MaxSteps{args.max_steps}.csv"
+            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}__RVHeadingWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
@@ -411,7 +430,8 @@ def main():
 
         # Show 3D map  
         pygame.quit()
-        graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
+        if args.show_3d:
+            graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
 
     sys.exit()
 
