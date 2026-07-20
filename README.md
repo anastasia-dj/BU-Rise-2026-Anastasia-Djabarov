@@ -48,17 +48,17 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
             
     # --- Reversibility Testing ---
     spawn robot at (x, y, theta)
-    visited = empty set
+    #visited = empty set
 
     while steps < max_steps:
         if within position_boundary of root:
             return success
-        candidates = nodes within reverse_search_radius and reverse_heading_boundary of robot (excluding visited)
+        candidates = nodes within reverse_search_radius and reverse_heading_boundary of robot #(excluding visited) <-- Latest version no longer excludes visited
         if no candidates:
             return failure # No candidates in the vicinity
         
         best = candidate with lowest score # cost-to-come, distance to robot, or distance to root - depends on mode
-        visited.add(best)
+        #visited.add(best)
         v, w, t = best.control_input
 
         while True:
@@ -66,9 +66,9 @@ This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implem
                 step robot to closed_form_step(x,y,theta,-v,-w,k*delta)
                 if within position_boundary of root:
                     return success
-                better = search again for a better node from current position (excluding visited)
+                better = search again for a better node from current position #(excluding visited) <-- Latest version no longer excludes visited
                 if better is not None and better score is more preferable to best 
-                    visited.add(better)
+                    #visited.add(better)
                     v, w, t = better.control_input # New control overwrites old control
                     break # Restart stepping with new control
             else:

@@ -69,6 +69,7 @@ parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.Boolea
 parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3,
 	help='Number of times to repeat the program.')
 parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
+parser.add_argument('-png', '--save_png', type=str, nargs='?', const='final_scene.png', metavar='', required=False, default=None, help='Skip generation completely and just generate a png.')
 
 # Rewire configurations
 parser.add_argument('-rw', '--rewire', type=bool, 
@@ -118,6 +119,10 @@ parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOpti
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
 
 args = parser.parse_args()
+
+if args.save_png:
+    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+    args.show_tree_building = False
 
 # Initialization
 pygame.init()
@@ -188,18 +193,22 @@ def main():
             progress_bar_tree = tqdm(total=args.nodes, desc=f"Growing rwhb={rwhb}, rwrad={rwrad}", position=1, leave=False)
             # Main growth loop
             while run and k < args.nodes:
-                clock.tick(environment.FPS)
+                if args.show_tree_building:
+                    clock.tick(environment.FPS)
+                
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         run = False
 
                 # Draw all initial states
-                obstacles = environment.draw_obstacles() if args.obstacles else []
-                graph.draw_initial_node(map=environment.map)
-                graph.draw_goal_node(map=environment.map)
-                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-
+                if args.show_tree_building:
+                    obstacles = environment.draw_obstacles() if args.obstacles else []
+                    graph.draw_initial_node(map=environment.map)
+                    graph.draw_goal_node(map=environment.map)
+                    graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+                    graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+                else:
+                    obstacles = [side for obstacle in environment.obstcles for side in obstacle] if args.obstacles else []
                 if args.show_tree_building:
                     environment.draw_trajectory_trail()
                 
@@ -254,8 +263,9 @@ def main():
                         break # Stop growing 
 
                     iteration += 1
-                    pygame.display.update()
-                    environment.map.fill(environment.WHITE)
+                    if args.show_tree_building:
+                        pygame.display.update()
+                        environment.map.fill(environment.WHITE)
 
             progress_bar_tree.close()
             none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0]) 
@@ -329,7 +339,7 @@ def main():
             avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
             avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
             avg_position_drift = sum(position_drifts)/len(position_drifts) if position_drifts else None
-            success_rate = successes/args.reversibility_trials
+            success_rate = successes/args.reversibility_trials if args.reversibility_trials > 0 else None
             avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
             avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
             #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
@@ -405,6 +415,19 @@ def main():
     progress_bar_overall.close()
 
     if args.repeat_program == False:
+
+        if args.save_png is not False:
+            environment.clear_screen()
+            if args.obstacles:
+                environment.draw_obstacles()
+            graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+            graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+            graph.draw_final_backdrop_2d(environment, nodes)
+            if graph.is_goal_found and args.path_to_goal:
+                graph.draw_path_to_goal
+            pygame.image.save(environment.map, args.save_png)
+            tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(args.save_png)}")
+
         if not args.show_tree_building:
             environment.show_screen()
             graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
@@ -431,6 +454,7 @@ def main():
         # Show 3D map  
         pygame.quit()
         if args.show_3d:
+            input("[EVENT] Please press enter to see the 3D plot. (Enter the terminal line)")
             graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
 
     sys.exit()

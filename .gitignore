@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 old_rvhb_dataset/rvhb_analysis.py
 *.txt
+*.png

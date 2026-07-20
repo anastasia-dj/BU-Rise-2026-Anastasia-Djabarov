@@ -8,6 +8,7 @@ try:
     matplotlib.use('macosx')   # Because I am using mac in the dorms
 except Exception:
     pass
+import matplotlib.pyplot as plt
 from node import Node
 from tqdm import tqdm
 
