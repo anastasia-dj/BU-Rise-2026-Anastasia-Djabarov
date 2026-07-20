@@ -892,13 +892,14 @@ class Graph():
 
             # Check nodes
             distance = math.hypot(n.position[0] - x, n.position[1] - y)
+            mismatch = self.angle_difference(n.orientation, theta_deg)
             if distance <= reverse_search_radius and self.angle_difference(n.orientation, theta_deg) <= reverse_heading_boundary:
                 if selection_mode == 'root':
-                    score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1])
+                    score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1]) + self.heading_weight * mismatch
                 elif selection_mode == 'cost':
-                    score = n.cost                      
+                    score = n.cost + self.heading_weight * mismatch                      
                 elif selection_mode == 'robot':
-                    score = distance
+                    score = distance + self.heading_weight * mismatch
                 if best is None or score < best[1]:
                     best = (i, score, last_j) 
                 
@@ -967,8 +968,8 @@ class Graph():
             # Visualizing the robot, robot's trail and search radius
             trail.append((int(x), int(y)))
             for px, py in trail[::3]:
-                pygame.draw.circle(environment.map, (160, 160, 220), (px, py), 1)
-            pygame.draw.circle(environment.map, self.BLUE, (int(x), int(y)), int(search_radius), width=1)    
+                pygame.draw.circle(environment.map, self.FUCSIA, (px, py), 1)
+            pygame.draw.circle(environment.map, self.FUCSIA, (int(x), int(y)), int(search_radius), width=1)    
 
             for i, n in enumerate(nodes):
                 if i == 0 or n.trajectory_samples is None:

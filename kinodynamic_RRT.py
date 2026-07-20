@@ -69,7 +69,7 @@ parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.Boolea
 parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3,
 	help='Number of times to repeat the program.')
 parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
-parser.add_argument('-png', '--save_png', type=str, nargs='?', const='final_scene.png', metavar='', required=False, default=None, help='Skip generation completely and just generate a png.')
+parser.add_argument('-png', '--save_png', type=str, nargs='?', const='final_scene.png', metavar='', required=False, default=None, help='Skip generation completely and just generate a png.') # INCOMPATIBLE WITH SRVT
 
 # Rewire configurations
 parser.add_argument('-rw', '--rewire', type=bool, 
@@ -184,7 +184,8 @@ def main():
             graph.v_magnitude = args.v_magnitude
             graph.max_steps = args.max_steps
             graph.use_samples = args.reverse_use_samples
-            graph.reverse_heading_weight = args.reverse_heading_weight
+            graph.heading_weight = args.reverse_heading_weight
+            
             environment.make_obstacles()
 
             if not args.show_tree_building and args.verbose:
@@ -354,7 +355,7 @@ def main():
                 if success_rate is not None:
                     tqdm.write(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                 else:
-                     tqdm.write(f"[REVERSE] success_rate=N/A (0 reversibility trials), avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
+                    tqdm.write(f"[REVERSE] success_rate=None, avg_position_drift={avg_position_drift}, avg_hops_on_success=None, avg_total_path_cost={avg_total_path_cost}")
                 tqdm.write("[REVERSE] failure breakdown:")
                 for reason, count in failure_reasons.items():
                     tqdm.write(f"    {reason}: {count}")
