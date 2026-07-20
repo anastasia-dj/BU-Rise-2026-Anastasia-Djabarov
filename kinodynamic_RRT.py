@@ -195,7 +195,7 @@ def main():
             while run and k < args.nodes:
                 if args.show_tree_building:
                     clock.tick(environment.FPS)
-                
+            
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         run = False
@@ -208,7 +208,7 @@ def main():
                     graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
                     graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
                 else:
-                    obstacles = [side for obstacle in environment.obstcles for side in obstacle] if args.obstacles else []
+                    obstacles = [side for obstacle in environment.obstacles for side in obstacle] if args.obstacles else []
                 if args.show_tree_building:
                     environment.draw_trajectory_trail()
                 
@@ -334,6 +334,7 @@ def main():
                     # Show the screen
                     if not args.show_tree_building:
                         environment.show_screen()
+                    print("[EVENT] Showing reversal trial")
                     graph.draw_reversal_trials(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb)
 
             avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
@@ -350,7 +351,10 @@ def main():
             max_steps_exceeded_count = failure_reasons.get('max_steps_exceeded', 0)
 
             if args.verbose:
-                tqdm.write(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
+                if success_rate is not None:
+                    tqdm.write(f"[REVERSE] success_rate={success_rate:.2%}, avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
+                else:
+                     tqdm.write(f"[REVERSE] success_rate=N/A (0 reversibility trials), avg_position_drift={avg_position_drift}, avg_hops_on_success={avg_hops_on_success}, avg_total_path_cost={avg_total_path_cost}")
                 tqdm.write("[REVERSE] failure breakdown:")
                 for reason, count in failure_reasons.items():
                     tqdm.write(f"    {reason}: {count}")
@@ -430,15 +434,22 @@ def main():
 
         if not args.show_tree_building:
             environment.show_screen()
+            print("[EVENT] Showing the screen")
             graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
             graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
             graph.draw_final_backdrop_2d(environment, nodes)
             pygame.display.update()
 
+            print("[EVENT] Waiting for user input")
             waiting_for_input = True
             while waiting_for_input:
+                print("[DEBUG] I am in the while loop")
+                if args.save_png is not None:
+                        print("[EVENT] No running simultion, quitting pygame.")
+                        waiting_for_input = False
                 for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN or event.type == pygame.QUIT:
+                        print("[EVENT] Recieved input, quitting pygame.")
                         waiting_for_input = False
                 pygame.display.update()
 
@@ -454,7 +465,7 @@ def main():
         # Show 3D map  
         pygame.quit()
         if args.show_3d:
-            input("[EVENT] Please press enter to see the 3D plot. (Enter the terminal line)")
+            print("[EVENT] Showing 3d graph now")
             graph.show_3d_map(nodes=nodes, init_point=args.x_init, goal_point=args.x_goal)
 
     sys.exit()
