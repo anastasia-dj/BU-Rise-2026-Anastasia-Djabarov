@@ -66,14 +66,14 @@ parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'rev
 
 # Logging / Data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
-parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3,
-	help='Number of times to repeat the program.')
+parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3, help='Number of times to repeat the program.')
 parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
 parser.add_argument('-png', '--save_png', type=str, nargs='?', const='final_scene.png', metavar='', required=False, default=None, help='Skip generation completely and just generate a png.') # INCOMPATIBLE WITH SRVT
+parser.add_argument('-cl', '--cost_log', action=argparse.BooleanOptionalAction, default=False, help='Write a per-trial cost-comparison CSV alongside the summary file.')
 
 # Rewire configurations
 parser.add_argument('-rw', '--rewire', type=bool, 
-	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
+	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=False,
 	help='Rewires the tree nodes.')
 parser.add_argument('-rwhb', '--rewire_heading_boundary', type=float, metavar='', required=False,
 	default=180, help='The boundary of the heading difference which is used in rewiring.')
@@ -131,7 +131,7 @@ pygame.init()
 ROBOT_INIT_PATH = 'images/initial.png'
 ROBOT_GOAL_PATH = 'images/goal.png'
 ROBOT_IMG_PATH = 'images/robot.png'
-MAP_DIMENSIONS = 640,480
+MAP_DIMENSIONS = 680,520 # used to be 640,480. Had to be changed for QL
 robot_images = [ROBOT_INIT_PATH, ROBOT_GOAL_PATH, ROBOT_IMG_PATH]
 
 # Initial and final robot configs (px, px, rad)
@@ -290,6 +290,7 @@ def main():
             failure_position_drifts = []
             average_ts = []
             spawn_to_root_costs = []
+            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}__RVHeadingWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"  
 
             for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
@@ -315,7 +316,7 @@ def main():
                 this_spawn_cost = nodes[random_node_index].cost if args.reverse_spawn_mode == 'node' else None
                 if this_spawn_cost is not None: 
                     spawn_to_root_costs.append(this_spawn_cost)   
-
+                
                 success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason, pose_path = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited, use_samples=args.reverse_use_samples, max_steps=args.max_steps)                
                 average_ts.append(average_t)
                 position_drift = math.hypot(final_x - nodes[0].position[0], final_y - nodes[0].position[1])
@@ -333,6 +334,16 @@ def main():
                 else:
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
                     failure_position_drifts.append(position_drift)
+
+                if args.cost_log:
+                    cost_file = file_name.replace('.csv', '_costs.csv')
+                    cost_exists = os.path.isfile(cost_file)
+                    with open(cost_file, 'a', newline='') as cf:
+                        cw = csv.writer(cf)
+                        if not cost_exists:
+                            cw.writerow(["run_number","trial","spawn_node","spawn_to_root_cost", "driven_path_cost","cost_ratio","success","reason"])
+                        ratio = (total_path_cost/this_spawn_cost) if (success and this_spawn_cost) else None
+                        cw.writerow([s+1, trial, random_node_index if args.reverse_spawn_mode=='node' else None, round(this_spawn_cost,2) if this_spawn_cost else None, round(total_path_cost,2), round(ratio,3) if ratio else None, success, reason])
                 
                 # Check argument passed
                 show_this = (args.show_reversal_trials == 'all' or (args.show_reversal_trials == 'failures' and not success) or (args.show_reversal_trials == 'successes' and success))
@@ -414,7 +425,7 @@ def main():
                 final_cost = None
 
             
-            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
+            #file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, theta_weight=args.reverse_heading_weight, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
