@@ -432,7 +432,7 @@ def main():
                 graph.draw_path_to_goal
             if args.save_png:
                 pygame.image.save(environment.map, args.save_png)
-            tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(args.save_png)}")
+                tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(args.save_png)}")
 
         if not args.show_tree_building:
             environment.show_screen()
