@@ -3,11 +3,15 @@
 The rewiring and reversal logic were both redesigned. Rewiring now copies an existing control input rather than approximating a straight-line connection, and reversal drives control inputs incrementally from the robot's actual position, using the control inputs of nodes with the "best" score. Reversibility testing (`drive_backwards()`) is currently being done to test whether a robot can retrace a path back to the root using only control inputs already stored in the tree. Sweeps of `reverse_search_radius` and `position_boundary` are in progress. Three candidate-selection modes (`cost`, `robot`, `root`) are currently being compared.
 
 ## Overview 
-This project currently extends AngeloEspinoza's 2D Pygame kinodynamic RRT implementation of a car-like robot (x, y, theta) in several ways:
-1. Adding sibling-copy rewiring within a search radius of each new node. When a nearby node offers a cheaper path, the new node adopts that node's parent and a truncated copy of its control input, so every rewired connection is a control input the robot could actually drive.
-2. Adding off-branch reversibility testing, in which a robot spawned anywhere in the tree retraces a path back to the root by repeatedly selecting a nearby node and driving its control input in reverse, switching branches mid-motion when a better node comes into range.
-3. Replacing the per-frame Euler-integrations with a closed-form arc trajectory solution by holding the linear velocity and angular velocity w constant over an edge's duration.
-4. Visualizing the tree in 3D space with theta as the z axis. 
+This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic RRT grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). The central question: can the tree be used in reverse? This project explores how a robot spawned on or near the tree retracing stored control inputs back to the root, with no steering function and no replanning.
+
+**Forward planning**: The tree grows by forward simulation only. A parent node is sampled (optionally weighted against heavily-extended nodes), a random control input is propagated via a closed-form arc solution, and the resulting state becomes a new node. Optional rewiring lets a new node adopt a cheaper nearby trajectory's parent and a truncated copy of its control input. The rewired node keeps its originally sampled state, accepting a bounded mismatch in exchange for preserved coverage.
+
+**Reverse navigation**: Reversibility testing spawns a robot at a random location within the tree, where it repeatedly selects a nearby stored configuration and drives that configuration's control input in reverse, switching branches mid-motion when a better candidate comes into range. Candidate selection weighs path cost, and heading alignment.
+
+The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output.
+
+Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
 
 ## File Organization
 - **node.py** - Node class: holds one node's position, orientation, parent, cost, trajectory samples, and control_input.

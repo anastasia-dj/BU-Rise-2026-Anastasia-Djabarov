@@ -408,8 +408,8 @@ def main():
                 final_cost = None
 
 
-            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}__RVHeadingWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
-            graph.log_results(file_name=file_name, run_number=s+1, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
+            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
+            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=args.reverse_heading_weight, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
 
@@ -430,7 +430,8 @@ def main():
             graph.draw_final_backdrop_2d(environment, nodes)
             if graph.is_goal_found and args.path_to_goal:
                 graph.draw_path_to_goal
-            pygame.image.save(environment.map, args.save_png)
+            if args.save_png:
+                pygame.image.save(environment.map, args.save_png)
             tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(args.save_png)}")
 
         if not args.show_tree_building:
