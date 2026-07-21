@@ -928,7 +928,7 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "reverse_theta_weight", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "avg_total_path_cost", "cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift", "stuck_no_candidate_count", "max_steps_exceeded_count"])
+                writer.writerow(["run_number", "reverse_theta_weight", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "robot_avg_path_cost", "baseline_avg_path_cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift", "stuck_no_candidate_count", "max_steps_exceeded_count"])
                 file_exists = True
             writer.writerow([run_number, theta_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count])
 

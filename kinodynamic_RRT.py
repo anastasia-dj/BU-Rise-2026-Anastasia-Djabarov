@@ -289,6 +289,7 @@ def main():
             heading_drifts = []
             failure_position_drifts = []
             average_ts = []
+            spawn_to_root_costs = []
 
             for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
@@ -310,6 +311,10 @@ def main():
                     
                     if math.hypot(start_x - nodes[0].position[0], start_y - nodes[0].position[1]) > pb:  # Don't count "lucky" spawns
                         break    
+                
+                this_spawn_cost = nodes[random_node_index].cost if args.reverse_spawn_mode == 'node' else None
+                if this_spawn_cost is not None: 
+                    spawn_to_root_costs.append(this_spawn_cost)   
 
                 success, final_x, final_y, final_theta, n_hops, total_path_cost, average_t, reason, pose_path = graph.drive_backwards(nodes=nodes, robot=robot, start_x=start_x, start_y=start_y, start_theta_deg=start_theta_deg, reverse_search_radius=rvrad, reverse_heading_boundary=rvhb, position_threshold=pb, selection_mode=args.reverse_selection_mode, use_visited=args.use_visited, use_samples=args.reverse_use_samples, max_steps=args.max_steps)                
                 average_ts.append(average_t)
@@ -347,6 +352,7 @@ def main():
             #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
             mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
             max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
+            avg_spawn_to_root_cost = sum(spawn_to_root_costs)/len(spawn_to_root_costs) if spawn_to_root_costs else None
 
             stuck_no_candidate_count = failure_reasons.get('stuck_no_candidate', 0)
             max_steps_exceeded_count = failure_reasons.get('max_steps_exceeded', 0)
@@ -407,9 +413,9 @@ def main():
                     tqdm.write("[STATS] Goal not found this run.")
                 final_cost = None
 
-
+            
             file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
-            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=args.reverse_heading_weight, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=final_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
+            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=args.reverse_heading_weight, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
 
