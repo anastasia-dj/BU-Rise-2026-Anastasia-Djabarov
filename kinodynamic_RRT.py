@@ -111,6 +111,8 @@ parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False,
 parser.add_argument('-srvt', '--show_reversal_trials', type=str, choices=['off', 'all', 'failures', 'successes'], metavar='', required=False, default='off', help='Draw the reversal trials after running.')
 parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=0.0,
 	help='Weight (px per degree) applied to heading mismatch in reversal candidate scoring. 0 = pure pass/fail filter (original behavior).')
+parser.add_argument('-rvhwl', '--reverse_heading_weight_list', nargs='+', type=float, metavar='', required=False,
+    default=None, help='List of reverse_heading_weight values to sweep: e.g. -rvhwl 0 0.5 1.0 1.5 2.0')
 
 parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOptionalAction, default=False,
     help='During reversal, search every trajectory sample along each edge instead of only node endpoints.')
@@ -147,16 +149,17 @@ def main():
     reverse_search_radii_to_test = args.reverse_search_radius_list if args.reverse_search_radius_list is not None else [args.reverse_search_radius]
     position_boundaries_to_test = args.position_boundary_list if args.position_boundary_list is not None else [args.position_boundary]
     reverse_heading_boundary_to_test = args.reverse_heading_boundary_list if args.reverse_heading_boundary_list is not None else [args.reverse_heading_boundary]
+    reverse_heading_weights_to_test = args.reverse_heading_weight_list if args.reverse_heading_weight_list is not None else [args.reverse_heading_weight]
 
     combos = list(itertools.product(
         rewire_heading_boundaries_to_test, rewire_search_radii_to_test, reverse_search_radii_to_test,
-        position_boundaries_to_test, reverse_heading_boundary_to_test
+        position_boundaries_to_test, reverse_heading_boundary_to_test, reverse_heading_weights_to_test
     ))
 
     repeats = args.repeat_program_num if args.repeat_program else 1
     progress_bar_overall = tqdm(total=len(combos)*repeats, desc="Overall sweep", position=0)
 
-    for rwhb, rwrad, rvrad, pb, rvhb in combos:
+    for rwhb, rwrad, rvrad, pb, rvhb, rvhw in combos:
         s = 0
         while True:
             graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
@@ -184,7 +187,7 @@ def main():
             graph.v_magnitude = args.v_magnitude
             graph.max_steps = args.max_steps
             graph.use_samples = args.reverse_use_samples
-            graph.heading_weight = args.reverse_heading_weight
+            graph.heading_weight = rvhw
             
             environment.make_obstacles()
 
@@ -290,7 +293,7 @@ def main():
             failure_position_drifts = []
             average_ts = []
             spawn_to_root_costs = []
-            file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}__RVHeadingWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"  
+            file_name = f"Mode{args.reverse_selection_mode}__RVHeadingWeight{rvhw}_WHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"  
 
             for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
@@ -426,7 +429,7 @@ def main():
 
             
             #file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
-            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=args.reverse_heading_weight, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
+            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             progress_bar_overall.update(1)
 

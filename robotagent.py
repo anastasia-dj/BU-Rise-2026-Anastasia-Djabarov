@@ -2,10 +2,12 @@ import argparse
 import math
 import numpy as np
 import qlearning
-from robotenv import RobotEnv, replay
+from robotenv import RobotEnv, replay, evaluate_and_log
 
 # Parser Arguments (CLI)
 parser = argparse.ArgumentParser(description='Q-learning for a nonholonomic car reaching a fixed goal from any start. (Aka, the RL mirror of kRRT reversibility trials).')
+
+# QLearning
 parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=20, help='Allowed distance (px) from the goal.')
 parser.add_argument('-goal', '--goal', nargs=2, type=float, metavar='', required=False, default=[340.0, 260.0], help='Goal position in x(px), y(px).')
 parser.add_argument('-ts', '--t_step', type=float, metavar='', required=False, default=4.0, help='Seconds each action is held for, the equivalent of the edge_length_duration for kRRT.')
@@ -16,6 +18,22 @@ parser.add_argument('-tb', '--theta_bins', type=int, metavar='', required=False,
 parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=False, default=10, help='The magnitude of linear velocity used.')
 parser.add_argument('-wmag', '--w_magnitude', type=float, metavar='', required=False, default=0.5, help='The magnitude of angular velocity used. (0 angular velocity is also always an action the robot can take regardless of w_mag)')
 parser.add_argument('-rev', '--use_reverse', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Whether or not to allow the robot to pursue -v_magnitude')
+
+parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False, default=200, help='The max_steps taken in one episode.')
+parser.add_argument('-nte', '--number_training_episodes', type=int, metavar='', required=False, default=30000, help='The number of training episodes.')
+parser.add_argument('-lr', '--learning_rate', type=int, metavar='', required=False, default=0.7, help='The learning rate.')
+parser.add_argument('-g', '--gamma', type=int, metavar='', required=False, default=0.9, help='The gamma.')
+parser.add_argument('-dr', '--decay_rate', type=int, metavar='', required=False, default=0.0002, help='The decay rate.')
+
+
+# Logging and data collection
+parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
+parser.add_argument('-rpnn', '--repeat_program_new_table_num', type=int, metavar='', required=False, default=1, help='Number of times to repeat the program.')
+parser.add_argument('-rpns', '--repeat_program_same_table_num', type=int, metavar='', required=False, default=1, help='Number of times to repeat the program.')
+parser.add_argument('-sad', '--show_agent_drive', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Shows the animation of the agent driving.')
+parser.add_argument('-sqt', '--save_qtable', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Saves the qtable as a .npy file.')
+parser.add_argument('-vrn', '--view_run_number', type=int, metavar='', required=False, default=None, help="Shows the animation of a specific run.")
+
 args = parser.parse_args()
 
 # Constants
@@ -32,16 +50,15 @@ include_reverse = args.use_reverse # Default off
 t_step = args.t_step # Default 4.0
 step_penalty = args.step_penalty
 goal_reward = args.goal_reward
+n_training_episodes = args.number_training_episodes
+learning_rate = args.learning_rate
+gamma = args.gamma
+max_steps = args.max_steps
+decay_rate = args.decay_rate
 
-# TODO: Add CLI arguments for below. Currently placeholder values:
-n_training_episodes = 30000
-learning_rate = 0.7
-gamma = 0.9
-max_steps = 200
 n_eval_episodes = 200
 max_epsilon = 1.0
 min_epsilon = 0.05
-decay_rate = 0.0002
 
 # Sanity check
 px_per_action = v_magnitude * t_step
@@ -65,16 +82,29 @@ env = RobotEnv(
     goal_reward=goal_reward
 )
 
+file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.actions)}_StepPenalty{step_penalty}_Reward_{goal_reward}.csv"
 print("Observation Space", env.observation_space)
 print("Action Space", env.action_space)
 
-agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
-Qtable_robot = agent.train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps)
+if args.repeat_program_new_table_num != 1:
+    for repeats in range(args.repeat_program_new_table_num):
+        agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
+        Qtable_robot = agent.train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps)
+        if args.save_qtable is True:
+            np.save("robot_qtable.npy", Qtable_robot)
+        evaluate_and_log(env, Qtable_robot, max_steps=max_steps, n_eval_episodes=n_eval_episodes, file_name=file_name, run_number=repeats+1, cell_size=env.cell_size, theta_bins=env.theta_bins, t_step=env.t_step, w_step=env.w_step, position_boundary=env.position_boundary, step_penalty=env.step_penalty)
+else: # 'repeat_program_same_table_num'
+    agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
+    Qtable_robot = agent.train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps)
+    if args.save_qtable is True:
+        np.save("robot_qtable.npy", Qtable_robot)
+    for repeats in range(args.repeat_program_same_table_num):
+         evaluate_and_log(env, Qtable_robot, max_steps=max_steps, n_eval_episodes=n_eval_episodes, file_name=file_name, run_number=repeats+1, cell_size=env.cell_size, theta_bins=env.theta_bins, t_step=env.t_step, w_step=env.w_step, position_boundary=env.position_boundary, step_penalty=env.step_penalty)
 
-np.save("robot_qtable.npy", Qtable_robot)
+if args.view_run_number:
+    robot_images = ['images/initial.png', 'images/goal.png', 'images/robot.png']
+    replay(env, robot_images, Qtable_robot, max_steps=200, run_number=args.view_run_number)
 
-mean_reward, std_reward = agent.evaluate_agent(max_steps, n_eval_episodes, seed=None)
-print(f"Mean_reward={mean_reward:.2f} +/- {std_reward:.2f}")
-
-robot_images = ['images/initial.png', 'images/goal.png', 'images/robot.png']
-replay(env, robot_images, Qtable_robot, max_steps=200)
+if args.show_agent_drive:
+    robot_images = ['images/initial.png', 'images/goal.png', 'images/robot.png']
+    replay(env, robot_images, Qtable_robot, max_steps=200)

@@ -1,10 +1,12 @@
+import csv
 import math
 import random
 import sys
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
- 
+import os
+
 import environment
 import robot as robot_module
 
@@ -36,6 +38,7 @@ class RobotEnv(gym.Env):
         self.goal_reward = goal_reward
 
         # How many rows Q-Table will be
+        self.buffer_bins = 2 # How many extra bins put on each side
         self.x_bins = math.ceil(self.WIDTH / cell_size) 
         self.y_bins = math.ceil(self.HEIGHT / cell_size)
         n_states = self.x_bins * self.y_bins * self.theta_bins # Total number of states
@@ -81,18 +84,26 @@ class RobotEnv(gym.Env):
     def step(self, action):
         # Called per each action. Returns the new_state, reward, terminated, truncated, and info
         v, w = self.actions[action]
-        x_new, y_new, theta_new = self.closed_form_step(self.x, self.y, self.theta, v, w, self.t_step)
+        n_checks = 15
+        for k in range(1, n_checks + 1):
+            t = self.t_step * k / n_checks
+            x_new, y_new, theta_new = self.closed_form_step(self.x, self.y, self.theta, v, w, t)
+            elapsed_t = t
+            if self.distance_to_goal(x_new, y_new) <= self.position_boundary:
+                elapsed_t = t
+                break # Goal is reached midway through
+        
+        x_new, y_new, theta_new = self.closed_form_step(self.x, self.y, self.theta, v, w, elapsed_t)
 
         self.x, self.y, self.theta = x_new, y_new, theta_new
         self.steps_taken += 1
 
-        # TODO: Only checks if position boundary is reached at the END of an action, ignoring the possibility of crossing OVER the goal
         terminated = self.distance_to_goal(self.x, self.y) <= self.position_boundary
         truncated = self.steps_taken >= self.max_steps
 
         reward = self.goal_reward if terminated else self.step_penalty
 
-        return self.discretize(self.x, self.y, self.theta), reward, terminated, truncated, {}
+        return self.discretize(self.x, self.y, self.theta), reward, terminated, truncated, {"elapsed_t": elapsed_t}
     
     def reset(self, seed=None, options=None):
         # Resets the state by spawning the robot configuration anywhere on the map (Except for the position boundary)
@@ -116,12 +127,15 @@ class RobotEnv(gym.Env):
 
 
 # TODO: Add 3D Matplotlib
-def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5):
+def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run_number=None):
     # Replay the animation of the trained agent
     import pygame
     pygame.init()
     env_display = environment.Environment(dimensions=(env.WIDTH, env.HEIGHT), show_tree_building=True, has_obstacles=False)
     agent = robot_module.Robot(start=(0, 0, 0), robot_img=robot_images, length=0.01)
+
+    if run_number is not None:
+        random.seed(run_number)
 
     # Allow for user to pass in their own starting position (start). If not, randomly generate.
     if start is None:
@@ -164,9 +178,67 @@ def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5):
         
         if terminated:
             print(f"[EVENT] Reached the goal in {step+1} actions")
+            break
         
         if truncated:
             print(f"[EVENT] Ran out of steps without finding the goal, with a final distance of {env.distance_to_goal(env.x, env.y):.2f}")
+            break
 
     pygame.time.delay(1500)
     pygame.quit()
+
+def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_number, **params_to_log):
+    """
+    QLearning equivalent of kRRT's log_results()
+    """
+    random.seed(run_number)
+    successes = 0
+    costs = []
+    actions_on_success = []
+    failure_distances = []
+
+    # Go through each episode
+    for _ in range(n_eval_episodes):
+        state, info = env.reset()
+        distance_traveled = 0.0
+        # Go through each step
+        for step in range(max_steps):
+            action = int(np.argmax(Qtable[state]))
+            state, reward, terminated, truncated, info = env.step(action)
+            distance_traveled += env.v_magnitude * info["elapsed_t"] 
+            if terminated: # Goal is reached
+                successes += 1
+                actions_on_success.append(step + 1)
+                costs.append(distance_traveled)
+                break 
+            if truncated: # Max steps 
+                failure_distances.append(env.distance_to_goal(env.x, env.y))
+                break
+    
+    # Take the averages (Like kRRT)
+    success_rate = successes / n_eval_episodes
+    avg_cost = sum(costs)/len(costs) if costs else None
+    std_cost = float(np.std(costs)) if costs else None
+    avg_actions = sum(actions_on_success)/len(actions_on_success) if actions_on_success else None
+    std_actions = float(np.std(actions_on_success)) if actions_on_success else None
+    avg_failure_distance = sum(failure_distances)/len(failure_distances) if failure_distances else None
+    std_failure_distance = float(np.std(failure_distances)) if failure_distances else None
+
+    # Create a csv file
+    file_exists = os.path.isfile(file_name)
+    with open(file_name, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        if not file_exists:
+            header = (["run_number", "success_rate", 
+                        "avg_cost", "std_cost",
+                        "avg_actions_on_success", "std_actions",
+                        "avg_failure_distance", "std_failure_distances"] 
+                        + list(params_to_log.keys()))
+            writer.writerow(header)
+        writer.writerow([run_number, success_rate, 
+                            avg_cost, std_cost,
+                            avg_actions, std_actions,
+                            avg_failure_distance, std_failure_distance] 
+                            + list(params_to_log.values()))
+
+    return success_rate, avg_cost, std_cost, avg_actions, std_actions, avg_failure_distance, std_failure_distance
