@@ -1,6 +1,10 @@
 # RISE - Sample-Based Motion Planning vs. Model-Free RL
 ## Status
+### kRRT
 The rewiring and reversal logic were both redesigned. Rewiring now copies an existing control input rather than approximating a straight-line connection, and reversal drives control inputs incrementally from the robot's actual position, using the control inputs of nodes with the "best" score. Reversibility testing (`drive_backwards()`) is currently being done to test whether a robot can retrace a path back to the root using only control inputs already stored in the tree. Sweeps of `reverse_search_radius` and `position_boundary` are in progress. Three candidate-selection modes (`cost`, `robot`, `root`) are currently being compared.
+
+### QLearning 
+A tabular agent is being trained as the RL counterpart to kRRT's reversibility testing. The current focus is establishing a fair comparison between kRRT and QLearning by creating an understandable resolution for QLearning (grid size, heading bins, action count).
 
 ## Overview 
 This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic RRT grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). The central question: can the tree be used in reverse? This project explores how a robot spawned on or near the tree retracing stored control inputs back to the root, with no steering function and no replanning.
@@ -14,13 +18,19 @@ The tree building and reversal process is observable end to end, with per-trial 
 Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
 
 ## File Organization
+### kRRT
 - **node.py** - Node class: holds one node's position, orientation, parent, cost, trajectory samples, and control_input.
 - **robot.py** - Robot class: kinematics (`closed_form_step`, `generate_arc_samples`), drawing and rotation.
 - **environment.py** - Environment class: map setup, obstacles, and trail drawing.
 - **RRT.py** - Graph class: tree recording, sampling, `simulate()` (simulates one full edge per call), `rewire_node()` (rewires nodes within a search radius), path extraction, plotting, reversibility testing (`drive_backwards()`, `find_nearest_qualifying_node`) and CSV result logging (`log_results()`).
 - **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check -> reversibility testing). Now also supports automated parameter sweeps (`-hbl`, `-radl`) and repeated trials (`-rp`/`-rpn`).
+### QLearning
+- **robotenv.py** - RobotEnv class (Gym environment): kinematics, state discretization, goal/step logic, and `replay()`/`evaluate_and_log()` for visualization and CSV logging.
+- **qlearning.py** - QLearning class: Q-table initialization, greedy/epsilon-greedy action selection, training/evaluation, and `find_episodes_for_convergence()`.
+- **robotagent.py** - Main script: parses command-line arguments, builds the environment, trains (fixed-episode or convergence-based), and logs/replays results.
 
 ## Pseudocode
+### kRRT
     nodes = [Node(position=x_init, parent=0, cost=0)]  # root's parent is itself
 
     while not goal_found and num_nodes < max_nodes:
@@ -81,17 +91,24 @@ Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinody
 
     return failure # max steps exceeded
 
+### QLearning
+
+
 ## Current Design Decisions
 The core design decisions (so far) were suggested by Professor Tron and adopted for this implementation:
+### kRRT
 - **Off-branch reversal** - During reversal the robot searches the whole tree from its current position rather than walking its own .parent chain back to the root. It selects a nearby node, reverses that node's control input, and drives it incrementally, switching to a better node if one comes into range mid-motion. This allows the robot to cross between branches and use only existing control inputs.
 - **Sibling-copy rewiring** - When a cheaper connection is found, the new node adopts the candidate's parent and a truncated copy of the candidate's control input, becoming a child of that parent. Every rewired connection is therefore a real, already-simulated control input rather than a straight-line approximation. The node's position is not updated to the adopted control's true endpoint, so each rewired edge carries a small approximation error - see [Known Issue #8](#issue-8)
 - **Sampling by extending from a random existing node** - Rather than sampling a random point on the map and connecting to the nearest existing node (as in standard RRT*), a random node already in the tree is selected and extended directly. This makes each new node's parent known at creation, removing the need to search for one - see [Known Issue #1](#issue-1)
 - **v fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution
 - **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
 
-
+### QLearning
+- **Off-map actions (as well as unrecoverable configurations) are rejected and not executed.** Before an action is taken, its resulting position is checked against the map boundary. Invalid actions are excluded from both exploration and greedy selection. A similar process is executed for the unrecoverable configurations (e.g. the robot is facing a wall and, since it is nonholonomic, cannot turn around)
+- **Convergence decides training length.** `find_episodes_for_convergence()` tracks each state's best learned value over checkpointed intervals and stops once the largest change across all states drops below a threshold.
 
 ## Known Issues
+### kRRT
 <a id="issue-1"></a>
 1. ~~Sampling used nearest-neighbor search, which frequently duplicated old node coordinates.~~ **Resolved** — sampling now extends directly from a randomly chosen existing node, so parent is known at creation. 
 <a id="issue-2"></a>
@@ -105,6 +122,12 @@ The core design decisions (so far) were suggested by Professor Tron and adopted 
 <a id="issue-6"></a>
 6. ~~The 3D plot for simulations that do reach the goal shows incomplete portions and visible "jumps" between segments of the path. The suspected cause is from a missed update of .trajectory_samples.~~ **Resolved.** In `rewire_node()`​, the `trajectory_samples`​ for the promoted node and for the node on the edge containing it were being updated, but the `trajectory_samples​` of the node being rewired itself were not, resulting in a gap. This was fixed by adding the new parent's configuration and the node's own configuration to `trajectory_samples`,​ and by switching the 3D plot from `ax.scatter​` to `ax.plot`​ so these two points create a continuous line.
 <a id="issue-7"></a>
-7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=v_magnitude. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. **Update:** an `anti_drive_bias` parameter was added, giving an edge a configurable change of driving with `v=0` or `v=-v_magnitude` intended to encourage exploration into underrepresented regions of the map. This has been implemented but not yet rigorously validated. 
+7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=v_magnitude. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. **Update:** an `anti_drive_bias` parameter was added, giving an edge a configurable change of driving with `v=0` or `v=-v_magnitude` intended to encourage exploration into underrepresented regions of the map. Additionally, a `child_weight_exponent` has been added to encourage further growth from nodes with less children. These implementations have not been rigorously validated.
 <a id="issue-8"></a>
 8. Rewired nodes keep their original position while adopting a truncated control input, so the adopted control lands near the node rather than on it. Each rewired edge carries a small approximation error bounded by `rewire_search_radius`.
+
+### QLearning
+1. The off-map action check only verifies an action's final endpoint, not its full path. An action may pass through the edge of the map as long as its initial and final positions are within the boundaries. This does not pose an issue for the simulated comparison. However, in the real world, where it is impossible to walk through a wall, it may become an issue relevant for hardware deployment. 
+
+### Overall
+1. Currently, there are minor implementation discrepancies between QLearning and kRRT which may affect comparison - they are actively being worked through. The current list is as follows: QLearning's position boundary is a square, kRRT's position boundary is a circle; QLearning is bounded by the map, kRRT is not bounded; QLearning's map is slightly larger than kRRT (Was done to accomodate an odd number of cells to have a center "goal" cell).

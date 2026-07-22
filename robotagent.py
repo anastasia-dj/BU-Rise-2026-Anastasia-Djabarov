@@ -18,17 +18,20 @@ parser.add_argument('-tb', '--theta_bins', type=int, metavar='', required=False,
 parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=False, default=10, help='The magnitude of linear velocity used.')
 parser.add_argument('-wmag', '--w_magnitude', type=float, metavar='', required=False, default=0.5, help='The magnitude of angular velocity used. (0 angular velocity is also always an action the robot can take regardless of w_mag)')
 parser.add_argument('-rev', '--use_reverse', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Whether or not to allow the robot to pursue -v_magnitude')
-
 parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False, default=200, help='The max_steps taken in one episode.')
-parser.add_argument('-nte', '--number_training_episodes', type=int, metavar='', required=False, default=30000, help='The number of training episodes.')
-parser.add_argument('-lr', '--learning_rate', type=int, metavar='', required=False, default=0.7, help='The learning rate.')
-parser.add_argument('-g', '--gamma', type=int, metavar='', required=False, default=0.9, help='The gamma.')
-parser.add_argument('-dr', '--decay_rate', type=int, metavar='', required=False, default=0.0002, help='The decay rate.')
+parser.add_argument('-nte', '--number_training_episodes', type=int, metavar='', required=False, default=30000, help='The number of training episodes (Or the maximum number when searching for convergence).')
+parser.add_argument('-lr', '--learning_rate', type=float, metavar='', required=False, default=0.7, help='The learning rate.')
+parser.add_argument('-g', '--gamma', type=float, metavar='', required=False, default=0.9, help='The gamma.')
+parser.add_argument('-dr', '--decay_rate', type=float, metavar='', required=False, default=0.0002, help='The decay rate.')
 
+# Convergence testing (QLearning still)
+parser.add_argument('-fec', '--find_episodes_for_convergence', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Train until Q-values converge and record in a csv (no fixed episode count).')
+parser.add_argument('-ci', '--checkpoint_interval', type=int, metavar='', required=False, default=500, help='Number of episodes between convergence checkpoints.')
+parser.add_argument('-ct', '--convergence_threshold', type=float, metavar='', required=False, default=1.0, help='Max allowed delta between Q values in the same state before declaring convergence.')
 
 # Logging and data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
-parser.add_argument('-rpnn', '--repeat_program_new_table_num', type=int, metavar='', required=False, default=1, help='Number of times to repeat the program.')
+parser.add_argument('-rpnn', '--repeat_program_new_table_num', type=int, metavar='', required=False, default=0, help='Number of times to repeat the program.')
 parser.add_argument('-rpns', '--repeat_program_same_table_num', type=int, metavar='', required=False, default=1, help='Number of times to repeat the program.')
 parser.add_argument('-sad', '--show_agent_drive', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Shows the animation of the agent driving.')
 parser.add_argument('-sqt', '--save_qtable', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Saves the qtable as a .npy file.')
@@ -86,14 +89,27 @@ file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.ac
 print("Observation Space", env.observation_space)
 print("Action Space", env.action_space)
 
-if args.repeat_program_new_table_num != 1:
+if args.find_episodes_for_convergence:
+    agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
+    #NOTE: n_training_episodes is reused as the maximum number of episodes here to decrease the number of CLI args (because it is alot)
+    Qtable_robot, episodes_required = agent.find_episodes_for_convergence(max_episodes=n_training_episodes, min_epsilon=min_epsilon, max_epsilon=max_epsilon, decay_rate=decay_rate, max_steps=max_steps, file_name=f"CONVERGENCE_LR{args.learning_rate}_convergethresh_{args.convergence_threshold}_{file_name}", checkpoint_interval=args.checkpoint_interval, convergence_threshold=args.convergence_threshold)
+    
+    # CLI arg pass
+    if args.save_qtable:
+        np.save("robot_qtable.npy", Qtable_robot)
+
+    # Evaluate
+    evaluate_and_log(env, Qtable_robot, max_steps=max_steps, n_eval_episodes=n_eval_episodes, file_name=file_name, run_number=1, cell_size=env.cell_size, theta_bins=env.theta_bins, t_step=env.t_step, w_step=env.w_step, position_boundary=env.position_boundary, step_penalty=env.step_penalty)
+
+if args.repeat_program_new_table_num != 0:
     for repeats in range(args.repeat_program_new_table_num):
         agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
         Qtable_robot = agent.train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps)
         if args.save_qtable is True:
             np.save("robot_qtable.npy", Qtable_robot)
         evaluate_and_log(env, Qtable_robot, max_steps=max_steps, n_eval_episodes=n_eval_episodes, file_name=file_name, run_number=repeats+1, cell_size=env.cell_size, theta_bins=env.theta_bins, t_step=env.t_step, w_step=env.w_step, position_boundary=env.position_boundary, step_penalty=env.step_penalty)
-else: # 'repeat_program_same_table_num'
+
+elif args.find_episodes_for_convergence is False: # 'repeat_program_same_table_num' is >=1 (Also covers the possibility of wanting 1 run since default=1 for repeat_program_same_table_num)
     agent = qlearning.QLearning(env, learning_rate=learning_rate, gamma=gamma)
     Qtable_robot = agent.train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps)
     if args.save_qtable is True:

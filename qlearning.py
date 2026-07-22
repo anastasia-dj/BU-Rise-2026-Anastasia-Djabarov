@@ -1,8 +1,11 @@
+import csv
+
 import numpy as np
 import gymnasium as gym
 import random
 from tqdm import tqdm
 from robotenv import RobotEnv
+import os
 
 class QLearning():
     """
@@ -25,7 +28,17 @@ class QLearning():
     # "Updating policy" half of off-policy
     def greedy_policy(self, state):
         # Return the action with highest value (EX: action = 0,1,2,3 - each row is 4 actions)
-        return int(np.argmax(self.Qtable[state][:]))
+
+        # Create a copy of the qtable
+        q_values = self.Qtable[state].copy()
+        for i in range(len(q_values)):
+            v, w = self.env.actions[i]
+            x_fin, y_fin, _ = self.env.closed_form_step(self.env.x, self.env.y, self.env.theta, v, w, self.env.t_step)
+            if not (0 <= x_fin <= self.env.WIDTH and 0 <= y_fin <= self.env.HEIGHT):
+                # Temporarily make action = negative infinity if impossible (thus, do not choose it) 
+                q_values[i] = -np.inf
+        
+        return int(np.argmax(q_values))
        
     # "Acting policy" half of off-policy
     def epsilon_greedy_policy (self, state, epsilon):
@@ -34,12 +47,19 @@ class QLearning():
             action = self.greedy_policy(state)
         else:
             # Search randomly (Exploration)
-            while True:
+            max_tries = 50
+
+            for _ in range(max_tries):
+                # Check action space
                 action = self.env.action_space.sample()
                 v, w = self.env.actions[action]
+                # Check where it would end (NOTE: The robot can go temporarily on the edge as long as it returns to the map. May be an issue in the real-world implementation of this)
                 x_fin, y_fin, _ = self.env.closed_form_step(self.env.x, self.env.y, self.env.theta, v, w, self.env.t_step)
+
+                # Only save action if it lands within the map
                 if 0 <= x_fin <= self.env.WIDTH and 0 <= y_fin <= self.env.HEIGHT:
-                    return action
+                    break
+                #     return action
         return action
     
     
@@ -52,6 +72,7 @@ class QLearning():
                 action = self.epsilon_greedy_policy(state, epsilon)
                 new_state, reward, terminated, truncated, info = self.env.step(action)
                 # Reward = R{t+1}, everything else is the table talking to itself (I think?)
+                # NOTE: Constant learning rate. Should be updated to be nonconstant?
                 self.Qtable[state][action] = self.Qtable[state][action] + self.learning_rate*(reward + self.gamma*np.max(self.Qtable[new_state]) - self.Qtable[state][action])
                 # Equation with TD Target and such such from the lecture, "nudges" data towards the actual values
                 if terminated or truncated:
@@ -88,4 +109,46 @@ class QLearning():
         std_reward = np.std(episode_rewards)
         return mean_reward, std_reward
     
-    
+    def find_episodes_for_convergence(self, max_episodes, min_epsilon, max_epsilon, decay_rate, max_steps, file_name, checkpoint_interval=500, convergence_threshold=1.0):
+        """
+        Trains until the largest change in any single state's best Qvalue measured over the checkpoint_interval drops below the convergence_threshold.
+        """
+        
+        # Copy and collapse Qtable into Qvalues for states
+        prev_checkpoint = np.max(self.Qtable, axis=1).copy()
+        file_exists = os.path.isfile(file_name)
+
+        with open(file_name, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            if not file_exists:
+                writer.writerow(["episode", "max_delta", "max_delta_ratio"])
+            
+            for episode in tqdm(range(max_episodes)):
+                epsilon = min_epsilon + (max_epsilon - min_epsilon) * np.exp(-decay_rate*episode)
+                state, info = self.env.reset()
+
+                # From train() (Does not call train becase otherwise the epsilon is wiped)
+                for step in range(max_steps):
+                    action = self.epsilon_greedy_policy(state, epsilon)
+                    new_state, reward, terminated, truncated, info = self.env.step(action)
+                    # Reward = R{t+1}, everything else is the table talking to itself (I think?)
+                    self.Qtable[state][action] = self.Qtable[state][action] + self.learning_rate*(reward + self.gamma*np.max(self.Qtable[new_state]) - self.Qtable[state][action])
+                    # Equation with TD Target and such such from the lecture, "nudges" data towards the actual values
+                    if terminated or truncated:
+                        break
+                    state = new_state
+                
+                if (episode + 1) % checkpoint_interval == 0:
+                    current_checkpoint = np.max(self.Qtable, axis=1).copy()
+                    state_with_max_delta = np.argmax(np.abs(current_checkpoint - prev_checkpoint))
+                    max_delta = float(np.abs(current_checkpoint[state_with_max_delta] - prev_checkpoint[state_with_max_delta])) # Biggest Q value diff within an INDIVIDUAL state
+                    ratio = max_delta / (np.abs(prev_checkpoint[state_with_max_delta]) + 1e-8) # Ratio of delta Q (NOTE: Unreliable at early training bc denominator is close to zzero)
+                    writer.writerow([episode + 1, max_delta, ratio])
+
+                    if max_delta < convergence_threshold:
+                        print(f"[CONVERGE] Converged after {episode + 1} episodes with a max_delta={max_delta:.4f}")
+                        return self.Qtable, episode + 1
+                    prev_checkpoint = current_checkpoint.copy()
+                
+        print(f"[CONVERGE] Did not converge within {max_episodes}")
+        return self.Qtable, max_episodes

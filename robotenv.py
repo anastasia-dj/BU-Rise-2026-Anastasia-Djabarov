@@ -112,17 +112,30 @@ class RobotEnv(gym.Env):
         return self.discretize(self.x, self.y, self.theta), reward, terminated, truncated, {"elapsed_t": elapsed_t}
     
     def reset(self, seed=None, options=None):
-        # Resets the state by spawning the robot configuration anywhere on the map (Except for the position boundary)
+        # Resets the state by spawning the robot configuration anywhere on the map (Except for the position boundary, with theta restrictions a certain distance from the walls (where there are no solutions))
         super().reset(seed=seed)
+        r = self.v_magnitude / self.w_step # The radius of the turn the robot can make (Used for theta bounding)
 
         while True:
             self.x = random.uniform(0, self.WIDTH)
             self.y = random.uniform(0, self.HEIGHT)
-            if not self.in_goal_cell(self.x, self.y):
-                break
-        self.theta = random.uniform(0, 2*math.pi)
+            self.theta = random.uniform(0, 2*math.pi)
+
+            if self.in_goal_cell(self.x, self.y):
+                continue
+            
+            # Check if robot is near the edges of the map or faced towards it
+            near_x_bottom = self.x < r and math.cos(self.theta) < 0
+            near_x_top = self.x > self.WIDTH - r and math.cos(self.theta > 0)
+            near_y_bottom = self.y < r and math.sin(self.theta) < 0
+            near_y_top = self.y > self.HEIGHT - r and math.sin(self.theta) > 0
+
+            if near_x_bottom or near_x_top or near_y_bottom or near_y_top:
+                continue # Do not consider positions which are impossible to drive out of
+
+            break
+
         self.steps_taken = 0
-        
         return self.discretize(self.x, self.y, self.theta), {}
     
     # --- Visualization such, such ---
