@@ -38,10 +38,12 @@ class RobotEnv(gym.Env):
         self.goal_reward = goal_reward
 
         # How many rows Q-Table will be
-        self.buffer_bins = 2 # How many extra bins put on each side
         self.x_bins = math.ceil(self.WIDTH / cell_size) 
         self.y_bins = math.ceil(self.HEIGHT / cell_size)
+        self.goal_x_bin = min(max(int(self.goal_x // self.cell_size), 0), self.x_bins - 1)
+        self.goal_y_bin = min(max(int(self.goal_y // self.cell_size), 0), self.y_bins - 1)
         n_states = self.x_bins * self.y_bins * self.theta_bins # Total number of states
+        
 
         # How many columns Q-Table will be
         self.actions = [(self.v_magnitude, 0.0), (self.v_magnitude, self.w_step), (self.v_magnitude, -self.w_step)]
@@ -67,11 +69,15 @@ class RobotEnv(gym.Env):
         y_fin = y + r * (math.cos(theta_fin) - math.cos(theta))
         return x_fin, y_fin, theta_fin
 
+    def in_goal_cell(self, x, y):
+        x_bin = min(max(int(x // self.cell_size), 0), self.x_bins-1)
+        y_bin = min(max(int(y // self.cell_size), 0), self.y_bins-1)
+        return x_bin == self.goal_x_bin and y_bin == self.goal_y_bin
+
     def distance_to_goal(self, x, y):
         # Returns the distance to goal
         return math.hypot(x - self.goal_x, y - self.goal_y)
     
-
     # --- Qtable discretization, step and reset field ---
     def discretize(self, x, y, theta_rad):
         # Turns a state into an ID for the Qtable row
@@ -84,12 +90,12 @@ class RobotEnv(gym.Env):
     def step(self, action):
         # Called per each action. Returns the new_state, reward, terminated, truncated, and info
         v, w = self.actions[action]
-        n_checks = 15
+        n_checks = 15 # Number of times checked whether robot reached goal
         for k in range(1, n_checks + 1):
             t = self.t_step * k / n_checks
             x_new, y_new, theta_new = self.closed_form_step(self.x, self.y, self.theta, v, w, t)
             elapsed_t = t
-            if self.distance_to_goal(x_new, y_new) <= self.position_boundary:
+            if self.in_goal_cell(x_new, y_new):
                 elapsed_t = t
                 break # Goal is reached midway through
         
@@ -98,7 +104,7 @@ class RobotEnv(gym.Env):
         self.x, self.y, self.theta = x_new, y_new, theta_new
         self.steps_taken += 1
 
-        terminated = self.distance_to_goal(self.x, self.y) <= self.position_boundary
+        terminated = self.in_goal_cell(x_new, y_new)
         truncated = self.steps_taken >= self.max_steps
 
         reward = self.goal_reward if terminated else self.step_penalty
@@ -112,7 +118,7 @@ class RobotEnv(gym.Env):
         while True:
             self.x = random.uniform(0, self.WIDTH)
             self.y = random.uniform(0, self.HEIGHT)
-            if self.distance_to_goal(self.x, self.y) > self.position_boundary:
+            if not self.in_goal_cell(self.x, self.y):
                 break
         self.theta = random.uniform(0, 2*math.pi)
         self.steps_taken = 0
@@ -135,7 +141,7 @@ def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run
     agent = robot_module.Robot(start=(0, 0, 0), robot_img=robot_images, length=0.01)
 
     if run_number is not None:
-        random.seed(run_number)
+        random.seed(run_number+1)
 
     # Allow for user to pass in their own starting position (start). If not, randomly generate.
     if start is None:

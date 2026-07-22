@@ -2,10 +2,12 @@ import numpy as np
 import gymnasium as gym
 import random
 from tqdm import tqdm
+from robotenv import RobotEnv
 
 class QLearning():
     """
     Holds the methods for the QLearning algorithm, including initalization, training, and evaluation. 
+    Empty currently.
     """
 
     def __init__(self, env, learning_rate=0.7, gamma=0.95):
@@ -26,13 +28,18 @@ class QLearning():
         return int(np.argmax(self.Qtable[state][:]))
        
     # "Acting policy" half of off-policy
-    def epsilon_greedy_policy(self, state, epsilon):
+    def epsilon_greedy_policy (self, state, epsilon):
         if random.uniform(0, 1) > epsilon:
-            action = self.greedy_policy(state)
             # Be greedy (Exploitation)
+            action = self.greedy_policy(state)
         else:
-            action = self.env.action_space.sample()
             # Search randomly (Exploration)
+            while True:
+                action = self.env.action_space.sample()
+                v, w = self.env.actions[action]
+                x_fin, y_fin, _ = self.env.closed_form_step(self.env.x, self.env.y, self.env.theta, v, w, self.env.t_step)
+                if 0 <= x_fin <= self.env.WIDTH and 0 <= y_fin <= self.env.HEIGHT:
+                    return action
         return action
     
     
