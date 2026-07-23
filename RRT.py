@@ -121,14 +121,20 @@ class Graph():
         else:
             self.v = self.v_magnitude # Linear velocity
         
-        # self.edge_time_duration = random.uniform(0.5, 4)   
-        # turn_direction = random.choice([-1, 1])
-        # self.w = turn_direction * self.k_value / self.edge_time_duration
         
-        self.w = random.uniform(-0.5, 0.5) # Angular velocity
-        self.edge_time_duration = random.uniform(0.5, 4)
+        self.edge_time_duration = random.uniform(0.5, 4)   
+        
+        # Choose mode of w
+        if self.w_mode == 'random':
+            self.w = random.uniform(-0.5, 0.5)
+        elif self.w_mode == 'kwt2':
+            turn_direction = random.choice([-1, 1])
+            self.w = turn_direction * self.k_value / (self.edge_time_duration**2)
+        else: #'kwt'
+            turn_direction = random.choice([-1, 1])
+            self.w = turn_direction * self.k_value / (self.edge_time_duration)
+
         self.controls_vw = [self.v, self.w] 
-        # TODO
 
         # Check if collision free
         x_final, y_final, theta_final = robot.closed_form_step(x_init, y_init, theta_init, self.v, self.w, self.edge_time_duration)

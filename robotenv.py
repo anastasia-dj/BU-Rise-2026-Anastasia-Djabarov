@@ -31,7 +31,7 @@ class RobotEnv(gym.Env):
         # Physical constants
         self.v_magnitude = v_magnitude
         self.t_step = t_step # Equivalent of edge duration
-        self.w_step = w_step # TODO: TUNE!
+        self.w_step = w_step 
 
         self.max_steps = max_steps        
         self.step_penalty = step_penalty

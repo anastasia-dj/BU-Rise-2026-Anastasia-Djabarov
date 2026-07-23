@@ -85,7 +85,7 @@ env = RobotEnv(
     goal_reward=goal_reward
 )
 
-file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.actions)}_StepPenalty{step_penalty}_Reward_{goal_reward}.csv"
+file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.actions)}_StepPenalty{step_penalty}_Reward_{goal_reward}_TStep{t_step}.csv"
 print("Observation Space", env.observation_space)
 print("Action Space", env.action_space)
 

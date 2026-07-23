@@ -55,6 +55,8 @@ parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=F
 	help='Constant forward speed magnitude.')
 parser.add_argument('-cwe', '--children_weight_exponent', type=float, metavar='', required=False, default=0.0,
 	help='Exponent on children weighting when sampling a parent to extend (Exponent on the inverse of the number of childrem, 0 = NO bias)')
+parser.add_argument('-cwel', '--children_weight_exponent_list', nargs='+', type=float, metavar='', required=False,
+    default=None, help='List of cwe values to sweep automatically: e.g. -cwel 1 5 10 15')
 parser.add_argument('-s3d', '--show_3d', action=argparse.BooleanOptionalAction, default=False,
     help='Show the matplotlib 3D tree at the end of tree generation.')
 parser.add_argument('-k', '--k_value', type=float, metavar='', required=False, default=None,
@@ -69,7 +71,7 @@ parser.add_argument('-adm', '--anti_drive_mode', type=str, choices=['stop', 'rev
 # Logging / Data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
 parser.add_argument('-rpn', '--repeat_program_num', type=int, metavar='', required=False, default=3, help='Number of times to repeat the program.')
-parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Stop growing the tree as soon as the goal is reached.')
+parser.add_argument('-gep', '--goal_end_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Stop growing the tree as soon as the goal is reached.')
 parser.add_argument('-png', '--save_png', type=str, nargs='?', const='final_scene.png', metavar='', required=False, default=None, help='Skip generation completely and just generate a png.') # INCOMPATIBLE WITH SRVT
 parser.add_argument('-cl', '--cost_log', action=argparse.BooleanOptionalAction, default=False, help='Write a per-trial cost-comparison CSV alongside the summary file.')
 
@@ -119,6 +121,9 @@ parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOpti
     help='During reversal, search every trajectory sample along each edge instead of only node endpoints.')
 parser.add_argument('-kl', '--k_value_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of k values to sweep: e.g. -kl 10 20 30 50')
+parser.add_argument('-wmode', '--w_mode', type=str, choices=['random', 'kwt2', 'kwt'], metavar='', required=False, default='random',
+	help='How angular velocity w is generated: random (uniform w in [-0.5, 0.5]) or kwt (w = turn_direction * k_value / edge_time_duration**2)')
+
 # Quality of life
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
 
@@ -131,6 +136,7 @@ if args.save_png:
 # Initialization
 pygame.init()
 
+assert not (args.save_png is not None and args.show_reversal_trials != 'off'), "--save_png is not compatible with --show_reversal_trials"
 # Constants
 ROBOT_INIT_PATH = 'images/initial.png'
 ROBOT_GOAL_PATH = 'images/goal.png'
@@ -153,16 +159,17 @@ def main():
     reverse_heading_boundary_to_test = args.reverse_heading_boundary_list if args.reverse_heading_boundary_list is not None else [args.reverse_heading_boundary]
     reverse_heading_weights_to_test = args.reverse_heading_weight_list if args.reverse_heading_weight_list is not None else [args.reverse_heading_weight]
     k_values_to_test = args.k_value_list if args.k_value_list is not None else [args.k_value]
+    cwe_values_to_test = args.children_weight_exponent_list if args.children_weight_exponent_list is not None else [args.children_weight_exponent]
 
     combos = list(itertools.product(
         rewire_heading_boundaries_to_test, rewire_search_radii_to_test, reverse_search_radii_to_test,
-        position_boundaries_to_test, reverse_heading_boundary_to_test, reverse_heading_weights_to_test, k_values_to_test
+        position_boundaries_to_test, reverse_heading_boundary_to_test, reverse_heading_weights_to_test, k_values_to_test, cwe_values_to_test
     ))
 
     repeats = args.repeat_program_num if args.repeat_program else 1
     progress_bar_overall = tqdm(total=len(combos)*repeats, desc="Overall sweep", position=0)
 
-    for rwhb, rwrad, rvrad, pb, rvhb, rvhw, k_value in combos:
+    for rwhb, rwrad, rvrad, pb, rvhb, rvhw, k_value, cwe in combos:
         s = 0
         while True:
             graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
@@ -192,6 +199,7 @@ def main():
             graph.use_samples = args.reverse_use_samples
             graph.heading_weight = rvhw
             graph.k_value = k_value
+            graph.w_mode = args.w_mode
             
             environment.make_obstacles()
 
@@ -223,7 +231,7 @@ def main():
                 # If the goal is not found
                 if not graph.is_goal_found or not args.goal_end_program:
                     # Find a random node
-                    weights = [1.0/((1+graph.children_count[i])**args.children_weight_exponent) for i in range(len(nodes))] # = (1/children_count)*^exp for each node
+                    weights = [1.0/((1+graph.children_count[i])**cwe) for i in range(len(nodes))] # = (1/children_count)*^exp for each node
                     weighted_random_number = random.choices(range(len(nodes)), weights=weights, k=1)
                     random_parent_index = weighted_random_number[0]
 
@@ -297,7 +305,7 @@ def main():
             failure_position_drifts = []
             average_ts = []
             spawn_to_root_costs = []
-            file_name = f"Mode{args.reverse_selection_mode}__RVHeadingWeight{rvhw}_WHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"  
+            file_name = f"Mode{args.reverse_selection_mode}__RVHeadingWeight{rvhw}_CWE{cwe}_ADB{args.anti_drive_bias}_k{k_value}_WHeadingBound{rwhb}_RWRadius{rwrad}_ReverseHB{rvhb}_RVRadius{rvrad}_PosBound{pb}__Vmag{args.v_magnitude}_MaxSteps{args.max_steps}.csv"  
 
             for trial in tqdm(range(args.reversibility_trials), desc=f"Reversing rvhb={rvhb}, rvrad={rvrad}", position=1, leave=False): # Test drift for MULTIPLE nodes on the SAME tree
                 # Get the robot's starting position
@@ -435,8 +443,14 @@ def main():
             #file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
+            # TODO, PNG NAME::
             if args.save_png:
-                png_name = f"tree_k{k_value}_cwe{args.children_weight_exponent}.png"
+                if args.w_mode == 'random':
+                    png_name = f"tree_randomw_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{args.anti_drive_bias}.png"
+                elif args.w_mode == 'kwt':
+                    png_name = f"tree_k{k_value}_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{args.anti_drive_bias}.png"
+                else: #'kwt2'
+                    png_name = f"tree_k{k_value}tsquared_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{args.anti_drive_bias}.png"
                 environment.clear_screen()
                 if args.obstacles:
                     environment.draw_obstacles()

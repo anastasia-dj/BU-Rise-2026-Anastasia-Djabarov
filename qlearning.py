@@ -5,6 +5,7 @@ import gymnasium as gym
 import random
 from tqdm import tqdm
 from robotenv import RobotEnv
+import matplotlib.pyplot as plt
 import os
 
 class QLearning():
@@ -117,6 +118,7 @@ class QLearning():
         # Copy and collapse Qtable into Qvalues for states
         prev_checkpoint = np.max(self.Qtable, axis=1).copy()
         file_exists = os.path.isfile(file_name)
+        qvalue_history = []
 
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
@@ -140,6 +142,7 @@ class QLearning():
                 
                 if (episode + 1) % checkpoint_interval == 0:
                     current_checkpoint = np.max(self.Qtable, axis=1).copy()
+                    qvalue_history.append((episode+1, current_checkpoint.copy()))
                     state_with_max_delta = np.argmax(np.abs(current_checkpoint - prev_checkpoint))
                     max_delta = float(np.abs(current_checkpoint[state_with_max_delta] - prev_checkpoint[state_with_max_delta])) # Biggest Q value diff within an INDIVIDUAL state
                     ratio = max_delta / (np.abs(prev_checkpoint[state_with_max_delta]) + 1e-8) # Ratio of delta Q (NOTE: Unreliable at early training bc denominator is close to zzero)
@@ -147,8 +150,52 @@ class QLearning():
 
                     if max_delta < convergence_threshold:
                         print(f"[CONVERGE] Converged after {episode + 1} episodes with a max_delta={max_delta:.4f}")
+                        self.save_and_plot_qvalue_history(qvalue_history, file_name)
                         return self.Qtable, episode + 1
                     prev_checkpoint = current_checkpoint.copy()
                 
         print(f"[CONVERGE] Did not converge within {max_episodes}")
+        self.save_and_plot_qvalue_history(qvalue_history, file_name)
         return self.Qtable, max_episodes
+    
+    def save_and_plot_qvalue_history(self, qvalue_history, file_name):
+        base_name = file_name.replace(".csv", "")
+        n_states = len(qvalue_history[0][1])
+        
+        # Creates a file history of the qvalues
+        history_file = f"{base_name}_qvalue_history.csv"
+        with open(history_file, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["episode", "state_id", "qvalue"])
+            for episode, snapshot in qvalue_history:
+                for state_id, qvalue in enumerate(snapshot):
+                    writer.writerow([episode, state_id, qvalue])
+        
+        episodes = [ep for ep, _ in qvalue_history]
+
+        # Absolute Q table:
+        plt.figure(figsize=(10, 6))
+        for state_id in range(n_states):
+            values = [snapshot[state_id] for _, snapshot in qvalue_history]
+            plt.plot(episodes, values, linewidth=0.5, alpha=0.3)
+        plt.xlabel("Episode")
+        plt.ylabel("Qvalue (best action per state)")
+        plt.title(f"Absolute Qvalue per State ({n_states} States)")
+        plt.tight_layout()
+        plt.savefig(f"{base_name}_qvalue_absolute.png", dpi=150)
+        plt.close()
+
+        # One line per state showing how much its changed since the previous checkpoint:
+        plt.figure(figsize=(10, 6))
+        for state_id in range(n_states):
+            values = [snapshot[state_id] for _, snapshot in qvalue_history]
+            deltas = [0] + [values[i] - values[i - 1] for i in range(1, len(values))]
+            plt.plot(episodes, deltas, linewidth=0.5, alpha=0.3)
+        plt.xlabel("Episode")
+        plt.ylabel("Change in Qvalue Since Last Checkpoint")
+        plt.title(f"Qvalue Change per State ({n_states} States)")
+        plt.tight_layout()
+        plt.savefig(f"{base_name}_qvalue_delta.png", dpi=150)
+        plt.close()
+
+        print(f"Saved {history_file}, {base_name}_qvalue_absolute.png, {base_name}_qvalue_delta.png!")
