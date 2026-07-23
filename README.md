@@ -92,6 +92,25 @@ Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinody
     return failure # max steps exceeded
 
 ### QLearning
+    Qtable = zeros(state_space, action_space)
+
+    # --- Training ---
+    for episode in range(n_training_episodes):
+        epsilon = min_epsilon + (max_epsilon - min_epsilon) * exp(-decay_rate * episode)
+        state = env.reset() # Random starting position (x,y,theta); excludes configurations facing against a wall
+
+        for each step in range(max_steps):
+            if random() > epsilon:
+                action = the best known action          # Explore
+            else:
+                action = a random valid action          # Exploit
+            
+            new_state, reward, terminated, truncated = env.step(action) Qtable[state][action] += learning_rate * (reward + gamma * max(Qtable[new_state]) - Qtable[state][action]) # Note: Learning rate is currently fixed
+
+            if terminated or truncated:
+                break
+            
+            state = new_state
 
 
 ## Current Design Decisions
@@ -104,7 +123,7 @@ The core design decisions (so far) were suggested by Professor Tron and adopted 
 - **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
 
 ### QLearning
-- **Off-map actions (as well as unrecoverable configurations) are rejected and not executed.** Before an action is taken, its resulting position is checked against the map boundary. Invalid actions are excluded from both exploration and greedy selection. A similar process is executed for the unrecoverable configurations (e.g. the robot is facing a wall and, since it is nonholonomic, cannot turn around)
+- **Off-map actions (as well as unrecoverable configurations) are rejected and not executed.** Before an action is taken, its resulting position is checked against the map boundary. Invalid actions are excluded from both exploration and greedy selection. A similar process is used to remove spawning in unrecoverable configurations (e.g. the robot is facing a wall and, since it is nonholonomic, cannot turn around).
 - **Convergence decides training length.** `find_episodes_for_convergence()` tracks each state's best learned value over checkpointed intervals and stops once the largest change across all states drops below a threshold.
 
 ## Known Issues

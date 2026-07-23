@@ -120,10 +120,16 @@ class Graph():
                 self.v = random.choice([0, -self.v_magnitude]) # 'both
         else:
             self.v = self.v_magnitude # Linear velocity
+        
+        # self.edge_time_duration = random.uniform(0.5, 4)   
+        # turn_direction = random.choice([-1, 1])
+        # self.w = turn_direction * self.k_value / self.edge_time_duration
+        
         self.w = random.uniform(-0.5, 0.5) # Angular velocity
         self.edge_time_duration = random.uniform(0.5, 4)
         self.controls_vw = [self.v, self.w] 
-        
+        # TODO
+
         # Check if collision free
         x_final, y_final, theta_final = robot.closed_form_step(x_init, y_init, theta_init, self.v, self.w, self.edge_time_duration)
         theta_final_deg = math.degrees(theta_final) # Pygame wants degrees within update_visual
@@ -906,9 +912,9 @@ class Graph():
         return best
     
     def reached_root(self, nodes, root_index, x, y, position_threshold):
-        # Check if the robot is within a position threshold of the root
+        # Check if the robot is within a square position threshold of the root (Previously was a circle, but modified since QLearning uses a square)
         root = nodes[root_index]
-        return math.hypot(x-root.position[0], y-root.position[1]) <= position_threshold
+        return abs(x - root.position[0]) <= position_threshold and abs(y - root.position[1]) <= position_threshold
     
     def log_results(self, file_name, run_number, theta_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count):
         """

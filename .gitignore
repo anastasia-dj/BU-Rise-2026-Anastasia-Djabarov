@@ -10,3 +10,5 @@ old_rvhb_dataset/rvhb_analysis.py
 *.npy
 *.pkl
 *.pyc
+datasets/
+rvhw_set_sweep_analysis.py

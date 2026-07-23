@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='kRRT algorithm for a car-like robot.')
 parser.add_argument('-o', '--obstacles', type=bool, action=argparse.BooleanOptionalAction,
 	metavar='', required=False, help='Obstacles on the map')
-parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, default=5000,
+parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, default=20000,
 	help='Max number of nodes')
 parser.add_argument('-dt', '--delta', type=float, metavar='', required=False, default=0.05,
 	help='Fixed steps between frames for the visualization')
@@ -47,7 +47,7 @@ parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required
 parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', required=False,
  	default=math.pi, help='Allowed orientation region of the angle for the robot to reach the goal')
 parser.add_argument('-stb', '--show_tree_building', type=bool, 
-	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=True,
+	action=argparse.BooleanOptionalAction,	metavar='', required=False, default=False,
 	help='Shows the simulation forward in time')
 parser.add_argument('-sd', '--seed', type=int, metavar='', required=False, default=None,
 	help='Seed of the random numbers taken.')
@@ -57,6 +57,8 @@ parser.add_argument('-cwe', '--children_weight_exponent', type=float, metavar=''
 	help='Exponent on children weighting when sampling a parent to extend (Exponent on the inverse of the number of childrem, 0 = NO bias)')
 parser.add_argument('-s3d', '--show_3d', action=argparse.BooleanOptionalAction, default=False,
     help='Show the matplotlib 3D tree at the end of tree generation.')
+parser.add_argument('-k', '--k_value', type=float, metavar='', required=False, default=None,
+	help='The k value in w = t/k.')
 
 # Anti-drive
 parser.add_argument('-adb', '--anti_drive_bias', type=float, metavar='', required=False, default=0,
@@ -85,8 +87,6 @@ parser.add_argument('-rwradl', '--rewire_search_radius_list', nargs='+', type=fl
     default=None, help='List of search_radius values to sweep automatically: e.g. -radl 1 5 10 15')
 parser.add_argument('-stw', '--shot_theta_weight', type=float, metavar='', required=False, default=0.0,
     help='Weight applied to heading mismatch when picking the best shot, 0 = position-only (original behavior).')
-parser.add_argument('-rvradl', '--reverse_search_radius_list', nargs='+', type=float, metavar='', required=False,
-    default=None, help='List of reverse_search_radius values to sweep: e.g. -rvradl 10 20 30 50')
 parser.add_argument('-pbl', '--position_boundary_list', nargs='+', type=int, metavar='', required=False,
     default=None, help='List of position_boundary values to sweep: e.g. -pbl 10 20 30 50')
 parser.add_argument('-rvhbl', '--reverse_heading_boundary_list', nargs='+', type=float, metavar='', required=False,
@@ -94,9 +94,11 @@ parser.add_argument('-rvhbl', '--reverse_heading_boundary_list', nargs='+', type
 
 # Reversibility configurations
 parser.add_argument('-rvhb', '--reverse_heading_boundary', type=float, metavar='', required=False,
-	default=180, help='The boundary of the heading difference which is used in reversing.')
+	default=90, help='The boundary of the heading difference which is used in reversing.')
+parser.add_argument('-rvradl', '--reverse_search_radius_list', nargs='+', type=float, metavar='', required=False,
+    default=None, help='List of reverse_search_radius values to sweep: e.g. -rvradl 10 20 30 50')
 parser.add_argument('-rvrad', '--reverse_search_radius', type=float, metavar='', required=False,
-	default=10, help='The search radius of the robot when deciding which node to reverse.')
+	default=30, help='The search radius of the robot when deciding which node to reverse.')
 parser.add_argument('-rvt', '--reversibility_trials', type=int, metavar='', required=False, default=30,
 	help='Number of reversibility trials to do..')
 parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
@@ -109,14 +111,14 @@ parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalActio
 parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False,
 	default=1000, help='The max steps taken in reversing.')
 parser.add_argument('-srvt', '--show_reversal_trials', type=str, choices=['off', 'all', 'failures', 'successes'], metavar='', required=False, default='off', help='Draw the reversal trials after running.')
-parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=0.0,
+parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=2.0,
 	help='Weight (px per degree) applied to heading mismatch in reversal candidate scoring. 0 = pure pass/fail filter (original behavior).')
 parser.add_argument('-rvhwl', '--reverse_heading_weight_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of reverse_heading_weight values to sweep: e.g. -rvhwl 0 0.5 1.0 1.5 2.0')
-
 parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOptionalAction, default=False,
     help='During reversal, search every trajectory sample along each edge instead of only node endpoints.')
-
+parser.add_argument('-kl', '--k_value_list', nargs='+', type=float, metavar='', required=False,
+    default=None, help='List of k values to sweep: e.g. -kl 10 20 30 50')
 # Quality of life
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
 
@@ -150,16 +152,17 @@ def main():
     position_boundaries_to_test = args.position_boundary_list if args.position_boundary_list is not None else [args.position_boundary]
     reverse_heading_boundary_to_test = args.reverse_heading_boundary_list if args.reverse_heading_boundary_list is not None else [args.reverse_heading_boundary]
     reverse_heading_weights_to_test = args.reverse_heading_weight_list if args.reverse_heading_weight_list is not None else [args.reverse_heading_weight]
+    k_values_to_test = args.k_value_list if args.k_value_list is not None else [args.k_value]
 
     combos = list(itertools.product(
         rewire_heading_boundaries_to_test, rewire_search_radii_to_test, reverse_search_radii_to_test,
-        position_boundaries_to_test, reverse_heading_boundary_to_test, reverse_heading_weights_to_test
+        position_boundaries_to_test, reverse_heading_boundary_to_test, reverse_heading_weights_to_test, k_values_to_test
     ))
 
     repeats = args.repeat_program_num if args.repeat_program else 1
     progress_bar_overall = tqdm(total=len(combos)*repeats, desc="Overall sweep", position=0)
 
-    for rwhb, rwrad, rvrad, pb, rvhb, rvhw in combos:
+    for rwhb, rwrad, rvrad, pb, rvhb, rvhw, k_value in combos:
         s = 0
         while True:
             graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
@@ -188,6 +191,7 @@ def main():
             graph.max_steps = args.max_steps
             graph.use_samples = args.reverse_use_samples
             graph.heading_weight = rvhw
+            graph.k_value = k_value
             
             environment.make_obstacles()
 
@@ -431,6 +435,20 @@ def main():
             #file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
+            if args.save_png:
+                png_name = f"tree_k{k_value}_cwe{args.children_weight_exponent}.png"
+                environment.clear_screen()
+                if args.obstacles:
+                    environment.draw_obstacles()
+                graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+                graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+                graph.draw_final_backdrop_2d(environment, nodes)
+                if graph.is_goal_found and args.path_to_goal:
+                    graph.draw_path_to_goal(map=environment.map)
+                pygame.image.save(environment.map, png_name)
+                tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(png_name)}")
+
+
             progress_bar_overall.update(1)
 
             if not(args.repeat_program and s+1 < args.repeat_program_num):
@@ -440,19 +458,6 @@ def main():
     progress_bar_overall.close()
 
     if args.repeat_program == False:
-
-        if args.save_png is not False:
-            environment.clear_screen()
-            if args.obstacles:
-                environment.draw_obstacles()
-            graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-            graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
-            graph.draw_final_backdrop_2d(environment, nodes)
-            if graph.is_goal_found and args.path_to_goal:
-                graph.draw_path_to_goal
-            if args.save_png:
-                pygame.image.save(environment.map, args.save_png)
-                tqdm.write(f"[EVENT] Saved final scene to {os.path.abspath(args.save_png)}")
 
         if not args.show_tree_building:
             environment.show_screen()
