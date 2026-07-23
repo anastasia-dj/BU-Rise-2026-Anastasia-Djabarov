@@ -7,13 +7,9 @@ The rewiring and reversal logic were both redesigned. Rewiring now copies an exi
 A tabular agent is being trained as the RL counterpart to kRRT's reversibility testing. The current focus is establishing a fair comparison between kRRT and QLearning by creating an understandable resolution for QLearning (grid size, heading bins, action count).
 
 ## Overview 
-This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic RRT grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). The central question: can the tree be used in reverse? This project explores how a robot spawned on or near the tree retracing stored control inputs back to the root, with no steering function and no replanning.
+This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). The central question explored: can the tree be used in reverse, and can this method be used as an alternative for QLearning?
 
-**Forward planning**: The tree grows by forward simulation only. A parent node is sampled (optionally weighted against heavily-extended nodes), a random control input is propagated via a closed-form arc solution, and the resulting state becomes a new node. Optional rewiring lets a new node adopt a cheaper nearby trajectory's parent and a truncated copy of its control input. The rewired node keeps its originally sampled state, accepting a bounded mismatch in exchange for preserved coverage.
-
-**Reverse navigation**: Reversibility testing spawns a robot at a random location within the tree, where it repeatedly selects a nearby stored configuration and drives that configuration's control input in reverse, switching branches mid-motion when a better candidate comes into range. Candidate selection weighs path cost, and heading alignment.
-
-The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output.
+The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The QLearning algorithm is also observable, with a convergence function in process.
 
 Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
 
