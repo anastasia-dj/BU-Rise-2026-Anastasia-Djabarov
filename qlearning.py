@@ -65,10 +65,14 @@ class QLearning():
     
     
     def train(self, n_training_episodes, min_epsilon, max_epsilon, decay_rate, max_steps):
+        
+        # Episode reward
+        
         for episode in tqdm(range(n_training_episodes)):
             epsilon = min_epsilon + (max_epsilon - min_epsilon) * np.exp(-decay_rate*episode) # Runs from 1 --> 0, expn
             state, info = self.env.reset() # From the gynasium library
 
+            # Start a total rewards, just keep the total rewards = total rewards + itself, and if it is terminated
             for step in range(max_steps):
                 action = self.epsilon_greedy_policy(state, epsilon)
                 new_state, reward, terminated, truncated, info = self.env.step(action)
@@ -81,7 +85,7 @@ class QLearning():
                 state = new_state
             
         # Returned for cosemetic purposes 
-        return self.Qtable
+        return self.Qtable # Return episode reward at the end 
     
     def evaluate_agent(self, max_steps, n_eval_episodes, seed=None):
         episode_rewards = []
@@ -119,6 +123,8 @@ class QLearning():
         prev_checkpoint = np.max(self.Qtable, axis=1).copy()
         file_exists = os.path.isfile(file_name)
         qvalue_history = []
+        episode_total_rewards = []
+        episode_path_lengths = []
 
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
@@ -129,16 +135,23 @@ class QLearning():
                 epsilon = min_epsilon + (max_epsilon - min_epsilon) * np.exp(-decay_rate*episode)
                 state, info = self.env.reset()
 
+                episode_rewards = []
+                distance_traveled = 0.0
+
                 # From train() (Does not call train becase otherwise the epsilon is wiped)
                 for step in range(max_steps):
                     action = self.epsilon_greedy_policy(state, epsilon)
                     new_state, reward, terminated, truncated, info = self.env.step(action)
+                    episode_rewards.append(reward)
+                    distance_traveled += self.env.v_magnitude * info["elapsed_t"]
                     # Reward = R{t+1}, everything else is the table talking to itself (I think?)
                     self.Qtable[state][action] = self.Qtable[state][action] + self.learning_rate*(reward + self.gamma*np.max(self.Qtable[new_state]) - self.Qtable[state][action])
                     # Equation with TD Target and such such from the lecture, "nudges" data towards the actual values
                     if terminated or truncated:
                         break
                     state = new_state
+                episode_total_rewards.append(sum(episode_rewards))
+                episode_path_lengths.append((distance_traveled, 1 if terminated else 0))
                 
                 if (episode + 1) % checkpoint_interval == 0:
                     current_checkpoint = np.max(self.Qtable, axis=1).copy()
@@ -150,15 +163,15 @@ class QLearning():
 
                     if max_delta < convergence_threshold:
                         print(f"[CONVERGE] Converged after {episode + 1} episodes with a max_delta={max_delta:.4f}")
-                        self.save_and_plot_qvalue_history(qvalue_history, file_name)
+                        self.save_and_plot_qvalue_history(qvalue_history, file_name, episode_total_rewards, episode_path_lengths)
                         return self.Qtable, episode + 1
                     prev_checkpoint = current_checkpoint.copy()
                 
         print(f"[CONVERGE] Did not converge within {max_episodes}")
-        self.save_and_plot_qvalue_history(qvalue_history, file_name)
+        self.save_and_plot_qvalue_history(qvalue_history, file_name, episode_total_rewards, episode_path_lengths)
         return self.Qtable, max_episodes
     
-    def save_and_plot_qvalue_history(self, qvalue_history, file_name):
+    def save_and_plot_qvalue_history(self, qvalue_history, file_name, episode_total_rewards=None, episode_path_lengths=None):
         base_name = file_name.replace(".csv", "")
         n_states = len(qvalue_history[0][1])
         
@@ -173,7 +186,7 @@ class QLearning():
         
         episodes = [ep for ep, _ in qvalue_history]
 
-        # Absolute Q table:
+        # Chart 1: Absolute Q table:
         plt.figure(figsize=(10, 6))
         for state_id in range(n_states):
             values = [snapshot[state_id] for _, snapshot in qvalue_history]
@@ -185,7 +198,7 @@ class QLearning():
         plt.savefig(f"{base_name}_qvalue_absolute.png", dpi=150)
         plt.close()
 
-        # One line per state showing how much its changed since the previous checkpoint:
+        # Chart 2: One line per state showing how much its changed since the previous checkpoint:
         plt.figure(figsize=(10, 6))
         for state_id in range(n_states):
             values = [snapshot[state_id] for _, snapshot in qvalue_history]
@@ -194,8 +207,62 @@ class QLearning():
         plt.xlabel("Episode")
         plt.ylabel("Change in Qvalue Since Last Checkpoint")
         plt.title(f"Qvalue Change per State ({n_states} States)")
+        plt.ylim(-20, 15)
         plt.tight_layout()
         plt.savefig(f"{base_name}_qvalue_delta.png", dpi=150)
         plt.close()
 
-        print(f"Saved {history_file}, {base_name}_qvalue_absolute.png, {base_name}_qvalue_delta.png!")
+        # Chart 3: Total summed reward per each episode
+        saved_files = f"{history_file}, {base_name}_qvalue_absolute.png, {base_name}_qvalue_delta.png"
+        print(f"episode_total_rewards has {len(episode_total_rewards) if episode_total_rewards else 'None or 0'} entries")
+        if episode_total_rewards is not None:
+            rewards_file = f"{base_name}_total_rewards.csv"
+            with open(rewards_file, mode='w', newline='') as file:
+                reward_writer = csv.writer(file)
+                reward_writer.writerow(["episode", "total_reward"])
+                for ep_num, total in enumerate(episode_total_rewards, start=1):
+                    reward_writer.writerow([ep_num, total])
+            plt.figure(figsize=(10, 6))
+            window_size = 100
+            smoothed_rewards = [
+                sum(episode_total_rewards[i:i+window_size]) / len(episode_total_rewards[i:i+window_size])
+                for i in range(0, len(episode_total_rewards), window_size)
+            ]
+            smoothed_episodes = list(range(1, len(episode_total_rewards) + 1, window_size))
+            plt.plot(smoothed_episodes, smoothed_rewards, linewidth=1.0)
+            plt.xlabel("Episode")
+            plt.ylabel("Total Reward Received During Episode")
+            plt.title("Total Reward per Episode")
+            plt.tight_layout()
+            plt.savefig(f"{base_name}_total_reward_per_episode.png", dpi=150)
+            plt.close()
+            saved_files += f", {base_name}_total_reward_per_episode.png"
+        
+        # Chart 4: Path lengths
+        if episode_path_lengths is not None:
+            paths_file = f"{base_name}_path_lengths.csv"
+            with open(paths_file, mode='w', newline='') as file:
+                path_writer = csv.writer(file)
+                path_writer.writerow(["episode", "path_length_px", "reached_goal"])
+                for ep_num, (length, reached) in enumerate(episode_path_lengths, start=1):
+                    path_writer.writerow([ep_num, length, reached])
+            window_size = 100
+            smoothed_lengths = []
+            smoothed_positions = []
+            for i in range(0, len(episode_path_lengths), window_size):
+                successes = [length for length, reached in episode_path_lengths[i:i+window_size] if reached == 1]
+                if successes:
+                    smoothed_lengths.append(sum(successes) / len(successes))
+                    smoothed_positions.append(i + 1)
+
+            plt.figure(figsize=(10, 6))
+            plt.plot(smoothed_positions, smoothed_lengths, linewidth=1.0)
+            plt.xlabel("Episode")
+            plt.ylabel(f"Path Length in px of Successful Episodes (Averaged Every {window_size} Episodes)")
+            plt.title("Path Length per Successful Episode")
+            plt.tight_layout()
+            plt.savefig(f"{base_name}_path_length_per_episode.png", dpi=150)
+            plt.close()
+            saved_files += f", {paths_file}, {base_name}_path_length_per_episode.png"
+
+        print(f"Saved {saved_files}")

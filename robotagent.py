@@ -9,11 +9,12 @@ parser = argparse.ArgumentParser(description='Q-learning for a nonholonomic car 
 
 # QLearning
 parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=20, help='Allowed distance (px) from the goal.')
-parser.add_argument('-goal', '--goal', nargs=2, type=float, metavar='', required=False, default=[340.0, 260.0], help='Goal position in x(px), y(px).')
-parser.add_argument('-ts', '--t_step', type=float, metavar='', required=False, default=4.0, help='Seconds each action is held for, the equivalent of the edge_length_duration for kRRT.')
+parser.add_argument('-goal', '--goal', nargs=2, type=float, metavar='', required=False, default=[210.0, 210.0], help='Goal position in x(px), y(px).')
+parser.add_argument('-mp', '--map_dimensions', nargs=2, type=int, metavar='', required=False, default=[420, 420], help='Size of the map.')
+#parser.add_argument('-ts', '--t_step', type=float, metavar='', required=False, default=4.0, help='Seconds each action is held for, the equivalent of the edge_length_duration for kRRT.')
 parser.add_argument('-sp', '--step_penalty', type=float, metavar='', required=False, default=-1.0, help='The penalty given for every action that does not reach the goal.')
 parser.add_argument('-gr', '--goal_reward', type=float, metavar='', required=False, default=100.0, help='Reward given the instant the goal is reached.')
-parser.add_argument('-cs', '--cell_size', type=int, metavar='', required=False, default=40, help='The size of the cells in the grid')
+parser.add_argument('-cs', '--cell_size', type=int, metavar='', required=False, default=28, help='The size of the cells in the grid')
 parser.add_argument('-tb', '--theta_bins', type=int, metavar='', required=False, default=8, help='Number of theta bins')
 parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=False, default=10, help='The magnitude of linear velocity used.')
 parser.add_argument('-wmag', '--w_magnitude', type=float, metavar='', required=False, default=0.5, help='The magnitude of angular velocity used. (0 angular velocity is also always an action the robot can take regardless of w_mag)')
@@ -23,11 +24,13 @@ parser.add_argument('-nte', '--number_training_episodes', type=int, metavar='', 
 parser.add_argument('-lr', '--learning_rate', type=float, metavar='', required=False, default=0.7, help='The learning rate.')
 parser.add_argument('-g', '--gamma', type=float, metavar='', required=False, default=0.9, help='The gamma.')
 parser.add_argument('-dr', '--decay_rate', type=float, metavar='', required=False, default=0.0002, help='The decay rate.')
+parser.add_argument('-aps', '--actions_per_state', type=int, metavar='', required=False, default=1, help='Number of actions per state.')
+
 
 # Convergence testing (QLearning still)
 parser.add_argument('-fec', '--find_episodes_for_convergence', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Train until Q-values converge and record in a csv (no fixed episode count).')
 parser.add_argument('-ci', '--checkpoint_interval', type=int, metavar='', required=False, default=500, help='Number of episodes between convergence checkpoints.')
-parser.add_argument('-ct', '--convergence_threshold', type=float, metavar='', required=False, default=1.0, help='Max allowed delta between Q values in the same state before declaring convergence.')
+parser.add_argument('-ct', '--convergence_threshold', type=float, metavar='', required=False, default=-1, help='Max allowed delta between Q values in the same state before declaring convergence.')
 
 # Logging and data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
@@ -37,20 +40,22 @@ parser.add_argument('-sad', '--show_agent_drive', type=bool, action=argparse.Boo
 parser.add_argument('-sqt', '--save_qtable', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Saves the qtable as a .npy file.')
 parser.add_argument('-vrn', '--view_run_number', type=int, metavar='', required=False, default=None, help="Shows the animation of a specific run.")
 
+
 args = parser.parse_args()
 
 # Constants
-MAP_DIMENSIONS = (680, 520) # Used to be 640 480
+MAP_DIMENSIONS = args.map_dimensions # Used to be 680, 520, 640 480. Now default is 420x420
 
 # CLI arguments
 goal = args.goal
-position_boundary = args.position_boundary # Default 20, TODO: Work down to 10 or 5
+actions_per_state = args.actions_per_state
+position_boundary = args.position_boundary # NOTE: Not used anymore
 cell_size = args.cell_size # Default 40
 theta_bins = args.theta_bins # Default 8
 v_magnitude = args.v_magnitude # Default 10
 w_step = args.w_magnitude # Default 0.5
 include_reverse = args.use_reverse # Default off
-t_step = args.t_step # Default 4.0
+t_step = cell_size/(actions_per_state*v_magnitude)
 step_penalty = args.step_penalty
 goal_reward = args.goal_reward
 n_training_episodes = args.number_training_episodes
@@ -85,7 +90,7 @@ env = RobotEnv(
     goal_reward=goal_reward
 )
 
-file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.actions)}_StepPenalty{step_penalty}_Reward_{goal_reward}_TStep{t_step}.csv"
+file_name = f"QL_CellSize{cell_size}_ThetaBins{theta_bins}_NumActions{len(env.actions)}_ActionsPerState{actions_per_state}_StepPenalty{step_penalty}_Reward_{goal_reward}_TStep{t_step}.csv"
 print("Observation Space", env.observation_space)
 print("Action Space", env.action_space)
 

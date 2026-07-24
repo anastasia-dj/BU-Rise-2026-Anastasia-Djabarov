@@ -12,3 +12,5 @@ old_rvhb_dataset/rvhb_analysis.py
 *.pyc
 datasets/
 rvhw_set_sweep_analysis.py
+layer_rewards.py
+layer_paths.py
