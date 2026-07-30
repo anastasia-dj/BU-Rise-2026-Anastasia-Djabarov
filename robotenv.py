@@ -111,6 +111,11 @@ class RobotEnv(gym.Env):
 
         return self.discretize(self.x, self.y, self.theta), reward, terminated, truncated, {"elapsed_t": elapsed_t}
     
+    def reset_to(self, x, y, theta_rad):
+        self.x, self.y, self.theta = x, y, theta_rad
+        self.steps_taken = 0
+        return self.discretize(self.x, self.y, self.theta), {}
+
     def reset(self, seed=None, options=None):
         # Resets the state by spawning the robot configuration anywhere on the map (Except for the position boundary, with theta restrictions a certain distance from the walls (where there are no solutions))
         super().reset(seed=seed)
@@ -126,7 +131,7 @@ class RobotEnv(gym.Env):
             
             # Check if robot is near the edges of the map or faced towards it
             near_x_bottom = self.x < r and math.cos(self.theta) < 0
-            near_x_top = self.x > self.WIDTH - r and math.cos(self.theta > 0)
+            near_x_top = self.x > self.WIDTH - r and math.cos(self.theta) > 0
             near_y_bottom = self.y < r and math.sin(self.theta) < 0
             near_y_top = self.y > self.HEIGHT - r and math.sin(self.theta) > 0
 
@@ -206,7 +211,7 @@ def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run
     pygame.time.delay(1500)
     pygame.quit()
 
-def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_number, **params_to_log):
+def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_number, spawn_list, **params_to_log):
     """
     QLearning equivalent of kRRT's log_results()
     """
@@ -215,10 +220,15 @@ def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_num
     costs = []
     actions_on_success = []
     failure_distances = []
+    per_episode_rows = []
 
     # Go through each episode
-    for _ in range(n_eval_episodes):
-        state, info = env.reset()
+    for episode in range(n_eval_episodes):
+        if spawn_list is not None:
+            sx, sy, sth_deg = spawn_list[episode]
+            state, info = env.reset_to(sx, sy, math.radians(sth_deg))
+        else:
+            state, info = env.reset()
         distance_traveled = 0.0
         # Go through each step
         for step in range(max_steps):
@@ -229,9 +239,11 @@ def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_num
                 successes += 1
                 actions_on_success.append(step + 1)
                 costs.append(distance_traveled)
+                per_episode_rows.append([episode, 1, distance_traveled, step + 1])
                 break 
             if truncated: # Max steps 
                 failure_distances.append(env.distance_to_goal(env.x, env.y))
+                per_episode_rows.append([episode, 0, distance_traveled, step + 1])
                 break
     
     # Take the averages (Like kRRT)
@@ -259,5 +271,14 @@ def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_num
                             avg_actions, std_actions,
                             avg_failure_distance, std_failure_distance] 
                             + list(params_to_log.values()))
+    
+    per_ep_file = file_name.replace(".csv", "_per_episode.csv")
+    per_file_exists = os.path.isfile(per_ep_file)
+    with open(per_ep_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        if not per_file_exists:
+            writer.writerow(["run_number", "episode", "success", "path_cost_px", "steps_taken"])
+        for row in per_episode_rows:
+            writer.writerow([run_number] + row)
 
     return success_rate, avg_cost, std_cost, avg_actions, std_actions, avg_failure_distance, std_failure_distance

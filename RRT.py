@@ -1,9 +1,11 @@
+import numpy as np
 import pygame
 import random
 import math
 import csv
 import os 
 import matplotlib
+import imageio
 try:
     matplotlib.use('macosx')   # Because I am using mac in the dorms
 except Exception:
@@ -74,6 +76,7 @@ class Graph():
         self.BLUE = (0, 0, 255)
         self.BROWN = (189, 154, 122)
         self.LIGHT_BROWN = (222, 184, 135)
+        self.NEON_PINK = (255, 20, 147)
 
     def is_free(self, configuration, obstacles):
         """
@@ -223,7 +226,7 @@ class Graph():
 
             return self.x_new, self.theta_new, trajectory_samples
     
-    def rewire_node(self, nodes, rewire_search_radius, delta, heading_boundary, robot):
+    def rewire_node(self, nodes, rewire_search_radius, delta, heading_boundary, robot, rewire_heading_weight):
         """
         Within a search radius, it finds the position (not strictly a node) with the lowest cost and copies the position's control input and cost to the new node.
         PARAMETERS
@@ -239,7 +242,7 @@ class Graph():
         """
         new_node_index = len(nodes)-1
         new_node = nodes[new_node_index]
-        best_cost = new_node.cost
+        best_score = new_node.cost 
         best_choice = None # (candidate_node_index, sample_index_j, candidate_v, candidate_w)
 
         for i in range(len(nodes)):
@@ -254,12 +257,14 @@ class Graph():
                 distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
                 if distance <= rewire_search_radius:
                     self.candidates_in_radius += 1
-                    if self.angle_difference(thetas[j], new_node.orientation) <= heading_boundary:
+                    angle_mismatch = self.angle_difference(thetas[j], new_node.orientation)
+                    if angle_mismatch <= heading_boundary:
                         # Cost as if new_node were sample j of candidate_node's edge
                         candidate_cost = nodes[candidate_node.parent].cost + (j+1)*delta*abs(candidate_v) 
-                        if candidate_cost < best_cost:
-                            best_cost = candidate_cost
-                            best_choice = (i,j, candidate_v, candidate_w)
+                        score = candidate_cost + rewire_heading_weight * angle_mismatch
+                        if score < best_score:
+                            best_score = score
+                            best_choice = (i,j, candidate_v, candidate_w, candidate_cost)
                     else:
                         self.candidates_blocked_by_heading +=1
         
@@ -270,7 +275,7 @@ class Graph():
         old_parent = new_node.parent
         old_cost = new_node.cost
 
-        candidate_index, j, candidate_v, candidate_w = best_choice
+        candidate_index, j, candidate_v, candidate_w, best_cost = best_choice
         candidate_node = nodes[candidate_index]
         candidate_t = (j+1)*delta # Time to the position
 
@@ -645,6 +650,52 @@ class Graph():
         fig.canvas.mpl_connect('key_press_event', on_key)
         plt.show()
 
+    def save_3d_map(self, nodes, init_point, goal_point, file_name, title):
+        """Initialize figure in the 3D axis
+            PARAMETERS
+                init_point : list (px, px, theta)
+            RETURNS
+                None
+        """
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+
+        branch_x, branch_y, branch_theta = [], [], []
+
+        for i, n in enumerate(nodes):
+            if i == 0:
+                continue 
+            parent = nodes[n.parent]
+            branch_x += [n.position[0], parent.position[0], float('nan')]
+            branch_y += [n.position[1], parent.position[1], float('nan')]
+            branch_theta += [n.orientation, parent.orientation, float('nan')]
+        ax.plot(branch_x, branch_y, branch_theta, alpha=0.5, color='brown', linewidth=0.5)
+
+        # if self.is_goal_found and len(self.x_final_path) > 1:
+        #     # Graph successful points
+        #     for i in range(len(self.x_final_path)):
+        #         ax.plot(self.x_final_path[i], self.y_final_path[i], self.theta_final_path[i], color='red', marker='.', markersize=2)
+        # else:
+        #     # No final path
+        xs = [n.position[0] for n in nodes]
+        ys = [n.position[1] for n in nodes]
+        thetas = [n.orientation for n in nodes]
+        ax.scatter(xs, ys, thetas, color='brown', s=5)
+            
+        # Initial and goal points
+        ax.scatter(init_point[0], init_point[1], math.degrees(init_point[2]), color='red', s=20)
+        ax.text(init_point[0], init_point[1], init_point[2], 'Initial Point', ha='left', va='center', fontsize=10)
+        #ax.scatter(goal_point[0], goal_point[1], math.degrees(goal_point[2]), color='green', s=20)
+        #ax.text(goal_point[0], goal_point[1], math.degrees(goal_point[2]), 'Goal Point', ha='left', va='center', fontsize=10)
+
+        ax.set_xlabel('X (px)')
+        ax.set_ylabel('Y (px)')
+        ax.set_zlabel('Theta (deg)')
+        ax.set_title(title, fontsize=8)
+
+        fig.savefig(file_name, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
     def angle_difference(self, theta_start, theta_end):
         #Smallest angular difference between two headings in degrees, accounting for wraparound at +-180. 
         #(e.g. 179 and -179 are 2 degrees apart, not 358).
@@ -670,8 +721,8 @@ class Graph():
 
     def draw_final_backdrop_2d(self, environment, nodes):
         self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
-        if self.is_goal_found:
-            self.draw_final_path_2d(map=environment.map, color=environment.RED, width=1)
+        # if self.is_goal_found:
+        #     self.draw_final_path_2d(map=environment.map, color=environment.RED, width=1)
 
     # NOTE: RETIRED 
     def path_from_node_to_root(self, start_index):
@@ -721,6 +772,7 @@ class Graph():
         #non_improving_streak = 0
         selected_t_values = []
         pose_path = [(x, y, math.degrees(theta))]
+        node_path = [None]
 
         
         for step in range(max_steps):
@@ -728,22 +780,34 @@ class Graph():
             if self.reached_root(nodes, root_index, x, y, position_threshold):
                 arrived_at_goal = True
                 average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root', pose_path
+                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'reached_root', pose_path, node_path
             
-            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples)
+            nearest_qualifying_node = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=None)
 
             # No candidates qualified 
             if nearest_qualifying_node is None:
-                average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'stuck_no_candidate', pose_path
-            
+                escalated = None
+                if n_hops == 0:
+                    for intensification in (1.1, 1.25, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 3.0): # Escalate the search radius of the first search if no initial nodes are found
+                        escalated = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius * intensification, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=None)
+                        if escalated is not None:
+                            if self.verbose:
+                                tqdm.write(f"[REV-ESCALATE] first-hop rescue at {intensification}x radius ({reverse_search_radius*intensification:.1f}px), pose=({x:.1f},{y:.1f})")
+                            break
+                if escalated is None:
+                    average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+                    return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'stuck_no_candidate', pose_path, node_path
+                nearest_qualifying_node = escalated
+
             index, cost, j = nearest_qualifying_node
             visited_indices.add(index)
             v, w, t = self.resolve_truncated_control(nodes[index], j)
             if self.verbose:
                 tqdm.write(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
+            score_at_pick = cost
             selected_t_values.append(t)
-            steps_in_edge = int(t/self.delta)
+            extended_t = self.reverse_extension_multiplier * t
+            steps_in_edge = int(extended_t/self.delta)
             committed_full_hop = True
             k=0
 
@@ -751,7 +815,10 @@ class Graph():
                 committed_full_hop = True
                 for k in range(1, steps_in_edge+1):
                     x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
+                    current_heading_deg = math.degrees(theta_new)
+                    score = self.live_node_score(nodes, index, current_heading_deg, selection_mode, root, x_new, y_new)
                     pose_path.append((x_new, y_new, math.degrees(theta_new)))
+                    node_path.append((index, score, score_at_pick))
                     distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
 
                     # if previous_distance_to_root is not None and not (distance_to_root_now < previous_distance_to_root):
@@ -764,38 +831,46 @@ class Graph():
                     # Check if root is reached
                     if self.reached_root(nodes, root_index, x_new, y_new, position_threshold):
                         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root', pose_path
+                        return True, x_new, y_new, math.degrees(theta_new), n_hops, total_path_cost + (k*self.delta*abs(v)), average_t, 'reached_root', pose_path, node_path
 
-                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples)
+                    mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=v)
+
 
                     if mid_found is not None:
-                        mid_index, mid_cost, mid_j = mid_found
+                        mid_index, mid_score, mid_j = mid_found
                         mid_v, mid_w, mid_t = self.resolve_truncated_control(nodes[mid_index], mid_j)
                         mid_landing_x, mid_landing_y, mid_landing_theta = robot.closed_form_step(x_new, y_new, theta_new, -mid_v, -mid_w, mid_t)
                         
                         mid_distance_to_root = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
 
-                        if selection_mode == 'root':
-                            current_score = distance_to_root_now
-                            candidate_score = math.hypot(mid_landing_x - root.position[0], mid_landing_y - root.position[1])
-                        elif selection_mode == 'cost':
-                            current_score = nodes[index].cost
-                            candidate_score = nodes[mid_index].cost
+                        #mismatch = self.angle_difference(n.orientation, theta_deg)
+
+                        if selection_mode in ('root', 'cost'):  
+                            current_score = score
+                            candidate_score = mid_score
                         elif selection_mode: # 'robot'
-                            current_score = 0.0 
+                            current_score = 0.0
                             candidate_score = math.hypot(mid_landing_x - x_new, mid_landing_y - y_new)
+
+
+                        if mid_found is not None and self.verbose:
+                                tqdm.write(f"[DEBUG-REV-CANDIDATE] k={k}, current_node={index} (score={current_score:.2f}), best_qualifying={mid_index} (score={mid_score:.2f}), same_node={mid_index == index}")
 
                         if mid_index != index and candidate_score < current_score:
                             visited_indices.add(mid_index)
                             if self.verbose:
                                 tqdm.write(f"[DEBUG-REV-SWITCH] k={k}, pos=({x_new:.1f},{y_new:.1f}): dropping node {index} for {mid_index}, making: dist_now({distance_to_root_now:.1f}) --> {mid_distance_to_root:.1f}")
+                            total_path_cost += k * self.delta * abs(v)
                             x, y, theta = x_new, y_new, theta_new
                             index = mid_index
+                            score = mid_score
+                            score_at_pick = mid_score
 
                             # Overwrite v,w,t with mid point
                             v, w, t = mid_v, mid_w, mid_t
                             selected_t_values.append(t)
-                            steps_in_edge = int(t / self.delta)
+                            extended_t = self.reverse_extension_multiplier * t
+                            steps_in_edge = int(extended_t / self.delta)
                             committed_full_hop = False
                             break
                 else:
@@ -815,9 +890,11 @@ class Graph():
                 tqdm.write(f"[DEBUG-REV-DRIFT] hop={n_hops}, pos=({x:.1f}, {y:.2f}), distance_to_root={final_distance_to_root:.1f}")
 
             if committed_full_hop:
-                x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, t)
+                x, y, theta = robot.closed_form_step(x, y, theta, -v, -w, extended_t)
+                score = self.live_node_score(nodes, index, math.degrees(theta), selection_mode, root, x, y) 
                 pose_path.append((x, y, math.degrees(theta)))
-                total_path_cost += t*abs(v)
+                node_path.append((index, score, score_at_pick))
+                total_path_cost += extended_t*abs(v)
             else: 
                 total_path_cost += k *self.delta * abs(v)
 
@@ -826,7 +903,7 @@ class Graph():
             previous_distance_to_root = distance_to_root_final
         
         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
-        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_steps_exceeded', pose_path
+        return arrived_at_goal, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_steps_exceeded', pose_path, node_path
 
     # NOTE: RETIRED 
     def shoot_toward_target(self, robot, x0, y0, theta0, target_x, target_y, target_theta_deg, n_shots = 10000):
@@ -859,7 +936,7 @@ class Graph():
         
         return best_configuration, best_distance
     
-    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples):
+    def find_nearest_qualifying_node(self, nodes, x, y, theta_deg, reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=None):
         """
         Searches the entire tree to find nodes within a certain threshold of the robot's current configuration (x,y,theta_deg). 
         The root is not included.
@@ -896,7 +973,9 @@ class Graph():
                         if selection_mode == 'root':
                             score = math.hypot(xs[j] - root.position[0], ys[j] - root.position[1]) + self.heading_weight * mismatch
                         elif selection_mode == 'cost':
-                            score = nodes[n.parent].cost + elapsed * abs(v_full) + self.heading_weight * mismatch
+                            score = nodes[n.parent].cost + elapsed * abs(v_full) + self.heading_weight * mismatch + self.position_weight * distance
+                            if current_v is not None and (v_full < 0) != (current_v < 0):
+                                score += self.gear_change_penalty
                         elif selection_mode == 'robot':
                             score = distance + self.heading_weight * mismatch
                         if best is None or score < best[1]:
@@ -909,7 +988,9 @@ class Graph():
                 if selection_mode == 'root':
                     score = math.hypot(n.position[0] - root.position[0], n.position[1] - root.position[1]) + self.heading_weight * mismatch
                 elif selection_mode == 'cost':
-                    score = n.cost + self.heading_weight * mismatch                      
+                    score = n.cost + self.heading_weight * mismatch + self.heading_weight * mismatch 
+                    if current_v is not None and (v_full < 0) != (current_v < 0):
+                        score += self.gear_change_penalty                      
                 elif selection_mode == 'robot':
                     score = distance + self.heading_weight * mismatch
                 if best is None or score < best[1]:
@@ -922,7 +1003,7 @@ class Graph():
         root = nodes[root_index]
         return abs(x - root.position[0]) <= position_threshold and abs(y - root.position[1]) <= position_threshold
     
-    def log_results(self, file_name, run_number, theta_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count):
+    def log_results(self, file_name, run_number, theta_weight, rewire_heading_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count):
         """
         Append a run's worth of data into a csv file.
         PARAMETERS:
@@ -940,9 +1021,9 @@ class Graph():
         with open(file_name, mode='a', newline='') as file:
             writer = csv.writer(file)
             if not file_exists:
-                writer.writerow(["run_number", "reverse_theta_weight", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "robot_avg_path_cost", "baseline_avg_path_cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift", "stuck_no_candidate_count", "max_steps_exceeded_count"])
+                writer.writerow(["run_number", "reverse_theta_weight", "rewire_heading_weight", "rewire_heading_boundary", "rewire_search_radius", "reverse_heading_boundary", "reverse_search_radius", "success_rate", "avg_position_drift", "avg_heading_drift", "avg_hops_on_success", "robot_avg_path_cost", "baseline_avg_path_cost", "mean_rewire_error", "max_rewire_error", "avg_failure_position_drift", "stuck_no_candidate_count", "max_steps_exceeded_count"])
                 file_exists = True
-            writer.writerow([run_number, theta_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count])
+            writer.writerow([run_number, theta_weight, rewire_heading_weight, rewire_heading_boundary, rewire_search_radius, reverse_heading_boundary, reverse_search_radius, success_rate, avg_position_drift, avg_heading_drift, avg_hops_on_success, avg_total_path_cost, cost, mean_rewire_error, max_rewire_error, avg_failure_position_drift, stuck_no_candidate_count, max_steps_exceeded_count])
 
     def resolve_truncated_control(self, node, j):
         """
@@ -953,7 +1034,7 @@ class Graph():
         t = t_full if j == len(xs) - 1 else (j + 1) * self.delta
         return v, w, t
     
-    def draw_reversal_trials(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, delay_ms=2, stride=4):
+    def draw_reversal_trials(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, node_path=None, delay_ms=2, stride=4):
         """
         Replays one finished reversibility trial as an animation.
         PARAMETERS
@@ -968,12 +1049,16 @@ class Graph():
         n_frames = len(pose_path)
         for f in range(0, n_frames, stride):
             x, y, theta_deg = pose_path[f]
+            active_entry = node_path[f] if node_path is not None else None 
+            active_index, active_score, active_score_at_pick = active_entry if active_entry is not None else (None, None, None)
+            cost_at_pick = nodes[active_index].cost if active_index is not None else None  
             # Play last couple frames slower:
             in_finale = f > n_frames - max(80, n_frames // 10)
 
             #Rebuild the backdrop for each frame
             environment.map.fill(self.WHITE)
             self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
+            self.draw_active_reversal_path(map=environment.map, nodes=nodes, node_index=active_index)
             self.draw_initial_robot_configuration(robot.init, environment=environment)   # root marker
             pygame.draw.circle(environment.map, (0, 120, 255), (int(start_pose[0]), int(start_pose[1])), 5)
             
@@ -997,10 +1082,132 @@ class Graph():
                         is_allowed = self.angle_difference(n.orientation, theta_deg) <= heading_boundary
                         pygame.draw.circle(environment.map, self.GREEN if is_allowed else self.RED, (int(n.position[0]), int(n.position[1])), 3)
             self.draw_robot_configuration(image=robot.img, position=(x, y), orientation=theta_deg, environment=environment)
+            self.draw_cost_text(map=environment.map, environment=environment, score=active_score, score_at_pick=active_score_at_pick)  
             pygame.display.update()
             pygame.time.delay(30 if in_finale else delay_ms)
-        
+
         color = self.GREEN if success else self.RED
         pygame.draw.circle(environment.map, color, (int(x), int(y)), 14, width=3)
         pygame.display.update()
         pygame.time.delay(1200)
+
+    def save_reversal_record(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, base_path, node_path=None, save_video=True, fps=30, stride=4, max_video_frames=1200):
+        """
+        Saves one reversibility trial: both a recorded .mp4 and the final state as a .png.
+        """
+        writer = None
+        if save_video:
+            writer = imageio.get_writer(base_path + ".mp4", fps=fps, macro_block_size=1)
+        
+        n_frames = len(pose_path)
+
+        # Longer runs have just faster runtime
+        if save_video:
+            stride = max(stride, math.ceil(n_frames / max_video_frames))
+
+        # List of pose indices which will actually be drawn
+        frame_indices = list(range(0, n_frames, stride))
+        
+        # If stride skips over the final index, add the index manually 
+        if frame_indices[-1] != n_frames - 1:
+            frame_indices.append(n_frames - 1)
+        
+        trail = [] # Breadcrumb history
+
+        for f in frame_indices:
+            # Unpack the pose 
+            x, y, theta_deg = pose_path[f]
+            active_entry = node_path[f] if node_path is not None else None  # CHANGED
+            active_index, active_score, active_score_at_pick = active_entry if active_entry is not None else (None, None, None) 
+            cost_at_pick = nodes[active_index].cost if active_index is not None else None 
+
+            # Redo the environment 
+            environment.map.fill(self.WHITE)
+            self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
+            self.draw_active_reversal_path(map=environment.map, nodes=nodes, node_index=active_index)
+            self.draw_initial_robot_configuration(robot.init, environment=environment)
+            pygame.draw.circle(environment.map, (0, 120, 255), (int(start_pose[0]), int(start_pose[1])), 5)
+
+            trail.append((int(x), int(y)))  
+            for px, py in trail[::3]:  
+                pygame.draw.circle(environment.map, self.FUCSIA, (px, py), 1)
+            pygame.draw.circle(environment.map, self.FUCSIA, (int(x), int(y)), int(search_radius), width=1)
+
+            for i, n in enumerate(nodes):
+                if i == 0 or n.trajectory_samples == None:
+                    continue # Skip the root or anything without an edge
+                if self.use_samples:
+                # Reversal searches every sample along every edge,
+                    xs, ys, thetas = n.trajectory_samples
+                    for q in range(len(xs)):
+                        # Nodes
+                        if math.hypot(xs[q] - x, ys[q] - y) <= search_radius: # Are you close enough?
+                            is_allowed = self.angle_difference(thetas[q], theta_deg) <= heading_boundary # Are you facing okay?
+                            pygame.draw.circle(environment.map, self.GREEN if is_allowed else self.RED, (int(xs[q]), int(ys[q])), 2)
+                else: # Only nodes
+                    if math.hypot(n.position[0] - x, n.position[1] - y) <= search_radius: # Are you close enough?
+                            is_allowed = self.angle_difference(n.orientation, theta_deg) <= heading_boundary # Are you facing okay?
+                            pygame.draw.circle(environment.map, self.GREEN if is_allowed else self.RED, (int(n.position[0]), int(n.position[1])), 3)
+
+            # Draw the robot itself
+            self.draw_robot_configuration(image=robot.img, position=(x, y), orientation=theta_deg, environment=environment)
+            self.draw_cost_text(map=environment.map, environment=environment, score=active_score, score_at_pick=active_score_at_pick)  
+
+            if save_video:
+                # Transposing stuff
+                frame = np.transpose(pygame.surfarray.array3d(environment.map), (1, 0, 2))
+                writer.append_data(frame) 
+
+        color = self.GREEN if success else self.RED
+        pygame.draw.circle(environment.map, color, (int(x), int(y)), 14, width=3)
+        pygame.image.save(environment.map, base_path + ".png")
+
+        if save_video:
+            # More video stuff 
+            frame = np.transpose(pygame.surfarray.array3d(environment.map), (1, 0, 2))
+            for _ in range(fps):
+                writer.append_data(frame)
+            writer.close()  
+
+    def draw_active_reversal_path(self, map, nodes, node_index, width=3):
+        if node_index is None:
+            return # failsafe
+
+        current = node_index
+        while True:
+            node_obj = nodes[current]
+            if node_obj.trajectory_samples is not None:
+                xs, ys, thetas = node_obj.trajectory_samples
+                points = list(zip(xs, ys))
+                if len(points) >= 2:
+                    pygame.draw.lines(surface=map, color=self.NEON_PINK, closed=False, points=points, width=width)
+            if current == 0:
+                break
+            current = node_obj.parent
+
+    def draw_cost_text(self, map, environment, score, score_at_pick=None):
+        if score is None:
+            return
+        if getattr(self, '_cost_font', None) is None:
+            self._cost_font = pygame.font.SysFont(None, 28)
+        lines = []
+        if score_at_pick is not None:
+            lines.append(f"node_score_at_pick = {score_at_pick:.2f}")  # CHANGED: label now says score
+        lines.append(f"node_live_score = {score:.2f}")
+        y = 10
+        for line in lines:
+            text_surface = self._cost_font.render(line, True, self.BLACK)
+            text_rect = text_surface.get_rect(topright=(environment.WIDTH - 10, y))
+            map.blit(text_surface, text_rect)
+            y += text_surface.get_height() + 4
+    
+    def live_node_score(self, nodes, index, heading_deg, selection_mode, root, x, y):
+        node = nodes[index]
+        mismatch = self.angle_difference(node.orientation, heading_deg)
+        distance = math.hypot(node.position[0] - x, node.position[1] - y)
+        if selection_mode == 'root':
+            return math.hypot(node.position[0] - root.position[0], node.position[1] - root.position[1]) + self.heading_weight * mismatch
+        elif selection_mode == 'cost':
+            return node.cost + self.heading_weight * mismatch + self.position_weight * distance
+        else:  # 'robot'
+            return math.hypot(node.position[0] - x, node.position[1] - y) + self.heading_weight * mismatch
