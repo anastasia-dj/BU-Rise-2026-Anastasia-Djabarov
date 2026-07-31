@@ -139,9 +139,11 @@ parser.add_argument('-rvspawnfile', '--reverse_spawn_file', type=str, metavar=''
 parser.add_argument('-rvext', '--reverse_extension_multiplier', type=float, metavar='', required=False, default=1000,
     help="Multiple of a held control's own t to keep driving it before giving up and picking fresh.")
 parser.add_argument('-rvpw', '--reverse_position_weight', type=float, metavar='', required=False, default=0,
-	help='Weight applied to distance (robot to candidate) in cost-mode reversal scoring, 0 = distance has no effect (original behavior).')
+	help='Weight applied to distance (robot to candidate) in cost-mode reversal scoring 0 = distance has no effect (original behavior).')
 parser.add_argument('-rvgcp', '--reverse_gear_change_penalty', type=float, metavar='', required=False, default=50,
-	help='Extra cost penalty applied when a reversal candidate would flip driving direction relative to the currently-held control. 0 = no penalty.')
+   help='Extra cost penalty applied when a reversal candidate would flip driving direction relative to the currently-held control. 0 = no penalty.')
+parser.add_argument('-rwsn', '--rewire_shot_count', type=int, metavar='', required=False, default=1000)
+
 
 # Quality of life
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
@@ -231,6 +233,8 @@ def main():
             graph.reverse_extension_multiplier = args.reverse_extension_multiplier 
             graph.position_weight = args.reverse_position_weight
             graph.gear_change_penalty = args.reverse_gear_change_penalty
+            graph.rewire_shot_count = args.rewire_shot_count
+            graph.shoot_rng = random.Random(args.seed)
             
             environment.make_obstacles()
 

@@ -245,6 +245,7 @@ class Graph():
         best_score = new_node.cost 
         best_choice = None # (candidate_node_index, sample_index_j, candidate_v, candidate_w)
 
+        nx, ny = new_node.position   
         for i in range(len(nodes)):
             if i == new_node_index: 
                 continue # Do not consider the new node as a parent to itself
@@ -252,6 +253,9 @@ class Graph():
             if candidate_node.trajectory_samples is None or candidate_node.control_input is None:
                 continue # Root has no trajectory/control_input to search
             xs, ys, thetas = candidate_node.trajectory_samples
+            max_edge_reach = self.v_magnitude * 4 + 5 # Ignore edges which physically cannot fit (cut down on computational time)
+            if (abs(candidate_node.position[0] - nx) > max_edge_reach + rewire_search_radius or abs(candidate_node.position[1] - ny) > max_edge_reach + rewire_search_radius):
+                continue 
             candidate_v, candidate_w, candidate_t = candidate_node.control_input
             for j in range(len(xs)): # Check each individual sample
                 distance = math.hypot(xs[j] - new_node.position[0], ys[j] - new_node.position[1])
@@ -278,21 +282,40 @@ class Graph():
         candidate_index, j, candidate_v, candidate_w, best_cost = best_choice
         candidate_node = nodes[candidate_index]
         candidate_t = (j+1)*delta # Time to the position
+        old_parent = new_node.parent
+        old_cost = new_node.cost
 
-        self.children_count[new_node.parent] -= 1 # Old parent is losing child
-        new_node.parent = candidate_node.parent # Make new_node the sibling of the parent
-        self.children_count[new_node.parent] += 1 # New parent is gaining child
-        new_node.control_input = (candidate_v, candidate_w, candidate_t)
-        new_node.cost = best_cost
+        # NEW SHOOTING:
+        parent_node = nodes[candidate_node.parent]
+        px, py = parent_node.position
+        ptheta = math.radians(parent_node.orientation)
+        best_shot, best_shot_score = None, None
+        for _ in range(self.rewire_shot_count):
+            v = self.shoot_rng.choice([self.v_magnitude, -self.v_magnitude])
+            w = self.shoot_rng.uniform(-0.5, 0.5)
+            t = self.shoot_rng.uniform(self.delta, 4) 
+            x1, y1, theta1 = robot.closed_form_step(px, py, ptheta, v, w, t)
+            d = math.hypot(x1 - new_node.position[0], y1 - new_node.position[1])
+            score = d + self.shot_theta_weight * self.angle_difference(math.degrees(theta1), new_node.orientation)
+            if best_shot_score is None or score < best_shot_score:
+                best_shot_score = score
+                best_shot = (v, w, t, x1, y1, math.degrees(theta1))
+        
+        v, w, t, land_x, land_y, land_theta = best_shot
+        shot_cost = parent_node.cost + t*abs(v)
+        if shot_cost >= old_cost:
+            return # Shot connection showed no improvement
+        
+        self.children_count[new_node.parent] -= 1
+        new_node.parent = candidate_node.parent
+        self.children_count[new_node.parent] += 1
+        new_node.control_input = (v, w, t)
+        new_node.cost = shot_cost                               
+        new_node.orientation = land_theta                          
+        xs, ys, thetas_rad = robot.generate_arc_samples(px, py, ptheta, v, w, t, delta)
+        new_node.trajectory_samples = (xs, ys, [math.degrees(a) for a in thetas_rad])
 
-        assert new_node.cost >= nodes[new_node.parent].cost, "[ERROR] Post-wire cost inconsistency with child cost ({new_node.cost}) >= parent cost ({nodes[new_node.parent].cost})"
-
-        parent_node = nodes[new_node.parent]
-        xs,ys,thetas_rad = robot.generate_arc_samples(parent_node.position[0], parent_node.position[1], math.radians(parent_node.orientation), candidate_v, candidate_w, candidate_t, delta)
-        new_node.trajectory_samples = (xs,ys,[math.degrees(t) for t in thetas_rad])
-        #new_node.orientation = math.degrees(thetas_rad[-1]) # TODO: Discuss with Professor Tron
-
-        rewire_error = math.hypot(xs[-1] - new_node.position[0], ys[-1] - new_node.position[1])
+        rewire_error = math.hypot(land_x - new_node.position[0], land_y - new_node.position[1])
         self.rewire_errors.append(rewire_error)
 
         if self.verbose:
@@ -788,7 +811,7 @@ class Graph():
             if nearest_qualifying_node is None:
                 escalated = None
                 if n_hops == 0:
-                    for intensification in (1.1, 1.25, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 3.0): # Escalate the search radius of the first search if no initial nodes are found
+                    for intensification in (1.1, 1.25, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 3.0, 4.0, 5.0): # Escalate the search radius of the first search if no initial nodes are found
                         escalated = self.find_nearest_qualifying_node(nodes, x, y, math.degrees(theta), reverse_search_radius * intensification, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=None)
                         if escalated is not None:
                             if self.verbose:
@@ -973,7 +996,7 @@ class Graph():
                         if selection_mode == 'root':
                             score = math.hypot(xs[j] - root.position[0], ys[j] - root.position[1]) + self.heading_weight * mismatch
                         elif selection_mode == 'cost':
-                            score = nodes[n.parent].cost + elapsed * abs(v_full) + self.heading_weight * mismatch + self.position_weight * distance
+                            score = nodes[n.parent].cost + elapsed * abs(v_full) + self.heading_weight * mismatch
                             if current_v is not None and (v_full < 0) != (current_v < 0):
                                 score += self.gear_change_penalty
                         elif selection_mode == 'robot':

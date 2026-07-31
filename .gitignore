@@ -20,3 +20,6 @@ export_tree.py
 generate_shared_spawns.py
 t_test_fin.py
 *.json
+graphs.py
+waffle_figure.py
+*.svg
