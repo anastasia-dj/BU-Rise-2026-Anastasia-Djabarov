@@ -42,7 +42,7 @@ parser.add_argument('-si', '--show_interpolation', type=bool, action=argparse.Bo
 parser.add_argument('-mr', '--move_robot', type=bool, action=argparse.BooleanOptionalAction, 
 	metavar='', required=False, default=False,
 	help='Shows the movements of the robot from start to end')
-parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=15,
+parser.add_argument('-pb', '--position_boundary', type=int, metavar='', required=False, default=14,
 	help='Allowed position region of the pixels for the robot to reach the goal')
 parser.add_argument('-ob', '--orientation_boundary', type=float, metavar='', required=False,
  	default=math.pi, help='Allowed orientation region of the angle for the robot to reach the goal')
@@ -143,7 +143,8 @@ parser.add_argument('-rvpw', '--reverse_position_weight', type=float, metavar=''
 parser.add_argument('-rvgcp', '--reverse_gear_change_penalty', type=float, metavar='', required=False, default=50,
    help='Extra cost penalty applied when a reversal candidate would flip driving direction relative to the currently-held control. 0 = no penalty.')
 parser.add_argument('-rwsn', '--rewire_shot_count', type=int, metavar='', required=False, default=1000)
-
+parser.add_argument('-rwexit', '--rewire_shot_exit_radius', type=float, metavar='', required=False, default=5.0,
+    help='Early-exit landing radius (px) for rewire shooting. Shot loop stops once a shot lands within this AND improves cost.')
 
 # Quality of life
 parser.add_argument('-v', '--verbose', action=argparse.BooleanOptionalAction, default=False, help='Show per-step debug tqdm.writes. Turn off for progress bars during sweeps.')
@@ -234,6 +235,7 @@ def main():
             graph.position_weight = args.reverse_position_weight
             graph.gear_change_penalty = args.reverse_gear_change_penalty
             graph.rewire_shot_count = args.rewire_shot_count
+            graph.rewire_shot_exit_radius = args.rewire_shot_exit_radius
             graph.shoot_rng = random.Random(args.seed)
             
             environment.make_obstacles()
@@ -327,6 +329,7 @@ def main():
 
             export_tree(nodes, root_index=0, scale_px_per_m=100.0, file_name="tree.json")
 
+           
             # --------- Reversibility Testing Start ---------
             
             # Handling a shared spawn set between
@@ -411,7 +414,7 @@ def main():
                 record_this = (args.save_reversibility_record == 'all' or (args.save_reversibility_record == 'failures' and not success) or (args.save_reversibility_record == 'successes' and success))
                 if record_this:
                     rec_base = in_output_folder(f"reversal_{args.reverse_selection_mode}_rvhb{rvhb}_rvrad{rvrad}_rvhw{rvhw}_pb{pb}_rwhw{rwhw}_adb{adb}_run{s+1}_trial{trial}_{'success' if success else 'fail'}")
-                    graph.save_reversal_record(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, node_path=node_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb, base_path=rec_base)  
+                    graph.save_reversal_record(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, position_threshold=pb,node_path=node_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb, base_path=rec_base)  
                     
                 # Check argument passed
                 show_this = (args.show_reversal_trials == 'all' or (args.show_reversal_trials == 'failures' and not success) or (args.show_reversal_trials == 'successes' and success))
@@ -420,7 +423,7 @@ def main():
                     if not args.show_tree_building:
                         environment.show_screen()
                     print("[EVENT] Showing reversal trial")
-                    graph.draw_reversal_trials(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, node_path=node_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb) 
+                    graph.draw_reversal_trials(robot=robot, environment=environment, nodes=nodes, pose_path=pose_path, position_threshold=pb, node_path=node_path, success=success, start_pose=(start_x, start_y), search_radius=rvrad, heading_boundary=rvhb) 
 
             avg_failure_position_drift = sum(failure_position_drifts)/len(failure_position_drifts) if failure_position_drifts else None
             avg_heading_drift = sum(heading_drifts)/len(heading_drifts) if heading_drifts else None
@@ -486,6 +489,8 @@ def main():
                 if args.verbose:
                     tqdm.write(f"[STATS] producing a final_path_cost={nodes[graph.goal_configuration].cost:.2f}")
                     tqdm.write(f"[STATS] max_jump={max_jump:.2f} deg, avg_jump={avg_jump:.2f} deg, total_variation={total_variation:.2f} (physical_ceiling={physical_ceiling:.2f}) of {len(flat_thetas)} samples.")
+                    tqdm.write(f"The total number of shots made during rewiring were = {graph.total_rewire_shots:,}")
+                    tqdm.write(f"(successful rewires: {len(graph.rewire_errors)})")
                 final_cost = nodes[graph.goal_configuration].cost
             else:
                 if args.verbose:
@@ -516,6 +521,16 @@ def main():
                 graph.draw_final_backdrop_2d(environment, nodes)
                 if graph.is_goal_found and args.path_to_goal:
                     graph.draw_path_to_goal(map=environment.map)
+                root_x, root_y = nodes[0].position 
+
+                half = args.position_boundary
+                root_rect = pygame.Rect(int(root_x - half), int(root_y - half), 2 * half, 2 * half)
+                pygame.draw.rect(environment.map, (34, 182, 101), root_rect)
+                pygame.draw.rect(environment.map, (0, 0, 0), root_rect, width=2)
+                g_font = pygame.font.SysFont(None, 30)
+                g_surf = g_font.render("G", True, (255, 255, 255))
+                environment.map.blit(g_surf, g_surf.get_rect(center=(int(root_x), int(root_y))))
+                
                 pygame.image.save(environment.map, png_name)
                 tqdm.write(f"[EVENT] Saved 2D tree to {os.path.abspath(png_name)}")
 

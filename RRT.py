@@ -38,6 +38,7 @@ class Graph():
         self.controls = []
         self.is_goal_found = False
         self.iteration = 0
+        self.total_rewire_shots = 0
 
         self.robot_position_history.append(self.x_init[:2]) # List accumulating history
         self.robot_orientation_history.append(math.degrees(self.x_init[2]))
@@ -289,29 +290,94 @@ class Graph():
         parent_node = nodes[candidate_node.parent]
         px, py = parent_node.position
         ptheta = math.radians(parent_node.orientation)
-        best_shot, best_shot_score = None, None
-        for _ in range(self.rewire_shot_count):
+        best_shot, best_shot_score, shots_fired, found_good_enough = None, None, 0, False
+        shots_per_round, keep_best = 25,5
+        pool = []
+
+        def score_of(shot):
+            return shot[0]
+        
+        for i in range(shots_per_round):
             v = self.shoot_rng.choice([self.v_magnitude, -self.v_magnitude])
             w = self.shoot_rng.uniform(-0.5, 0.5)
-            t = self.shoot_rng.uniform(self.delta, 4) 
+            t = self.shoot_rng.uniform(self.delta, 4)
+
+            shots_fired = shots_fired + 1
             x1, y1, theta1 = robot.closed_form_step(px, py, ptheta, v, w, t)
             d = math.hypot(x1 - new_node.position[0], y1 - new_node.position[1])
             score = d + self.shot_theta_weight * self.angle_difference(math.degrees(theta1), new_node.orientation)
+
             if best_shot_score is None or score < best_shot_score:
                 best_shot_score = score
                 best_shot = (v, w, t, x1, y1, math.degrees(theta1))
+            
+            pool.append([score, v, w, t])
+
+            if d <= self.rewire_shot_exit_radius and (parent_node.cost + t * abs(v)) < old_cost:
+                found_good_enough = True
+                break
         
+        w_spreads = [0.15, 0.05]
+        t_spreads = [0.6, 0.2]
+
+        for round_number in range(2):    
+            if found_good_enough:
+                break
+            
+            pool.sort(key=score_of)
+            elites = pool[0:keep_best]
+            pool = list(elites)    
+
+            for i in range(shots_per_round):
+                # Get the controls of a random elite trajectory
+                chosen = elites[self.shoot_rng.randrange(keep_best)]
+                v0 = chosen[1]
+                w0 = chosen[2]
+                t0 = chosen[3]
+
+                # Shoot in the same general direction with some noise
+                w = self.shoot_rng.gauss(w0, w_spreads[round_number])
+                t = self.shoot_rng.gauss(t0, t_spreads[round_number])
+
+                # Clamp back if shot beyond the legal allowed velocities
+                if w > 0.5:        
+                    w = 0.5
+                if w < -0.5:       
+                    w = -0.5
+                if t > 4.0:        
+                    t = 4.0
+                if t < self.delta: 
+                    t = self.delta
+
+                shots_fired = shots_fired + 1
+                x1, y1, theta1 = robot.closed_form_step(px, py, ptheta, v0, w, t)
+                d = math.hypot(x1 - new_node.position[0], y1 - new_node.position[1])
+                score = d + self.shot_theta_weight * self.angle_difference(math.degrees(theta1), new_node.orientation)
+
+                if score < best_shot_score:
+                    best_shot_score = score
+                    best_shot = (v0, w, t, x1, y1, math.degrees(theta1))
+
+                pool.append([score, v0, w, t])
+
+                if d <= self.rewire_shot_exit_radius and (parent_node.cost + t * abs(v0)) < old_cost:
+                    found_good_enough = True
+                    break
+
+        self.total_rewire_shots += shots_fired
         v, w, t, land_x, land_y, land_theta = best_shot
         shot_cost = parent_node.cost + t*abs(v)
-        if shot_cost >= old_cost:
+        if shot_cost >= old_cost or math.hypot(land_x - new_node.position[0], land_y - new_node.position[1]) > rewire_search_radius:
             return # Shot connection showed no improvement
         
         self.children_count[new_node.parent] -= 1
+        old_samples = new_node.trajectory_samples
         new_node.parent = candidate_node.parent
         self.children_count[new_node.parent] += 1
         new_node.control_input = (v, w, t)
         new_node.cost = shot_cost                               
-        new_node.orientation = land_theta                          
+        new_node.orientation = land_theta   
+        new_node.position = (land_x, land_y)                       
         xs, ys, thetas_rad = robot.generate_arc_samples(px, py, ptheta, v, w, t, delta)
         new_node.trajectory_samples = (xs, ys, [math.degrees(a) for a in thetas_rad])
 
@@ -519,7 +585,6 @@ class Graph():
         # Draw the robot's x_goal configuration
         position = self.x_goal[:2]
         orientation = math.degrees(self.x_goal[2])
-
         self.draw_robot_configuration(image=robot_img, position=position, orientation=orientation, environment=environment)
 
     def draw_random_robot_configuration(self, robot_img, environment):
@@ -828,6 +893,7 @@ class Graph():
             if self.verbose:
                 tqdm.write(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
             score_at_pick = cost
+            distance_at_pick = math.hypot(x - root.position[0], y - root.position[1])
             selected_t_values.append(t)
             extended_t = self.reverse_extension_multiplier * t
             steps_in_edge = int(extended_t/self.delta)
@@ -843,6 +909,12 @@ class Graph():
                     pose_path.append((x_new, y_new, math.degrees(theta_new)))
                     node_path.append((index, score, score_at_pick))
                     distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
+
+                    if (distance_to_root_now > distance_at_pick + 60.0 or k * self.delta * abs(w) > 2 * math.pi):
+                        total_path_cost += k * self.delta * abs(v)
+                        x, y, theta = x_new, y_new, theta_new
+                        committed_full_hop = False
+                        break
 
                     # if previous_distance_to_root is not None and not (distance_to_root_now < previous_distance_to_root):
                     #     non_improving_streak += 1
@@ -888,11 +960,14 @@ class Graph():
                             index = mid_index
                             score = mid_score
                             score_at_pick = mid_score
+                            distance_at_pick = math.hypot(x - root.position[0], y - root.position[1])
 
                             # Overwrite v,w,t with mid point
                             v, w, t = mid_v, mid_w, mid_t
                             selected_t_values.append(t)
                             extended_t = self.reverse_extension_multiplier * t
+                            if abs(w) > 1e-3:
+                                extended_t = min(extended_t, (0.75 * math.pi) / abs(w))
                             steps_in_edge = int(extended_t / self.delta)
                             committed_full_hop = False
                             break
@@ -1057,7 +1132,7 @@ class Graph():
         t = t_full if j == len(xs) - 1 else (j + 1) * self.delta
         return v, w, t
     
-    def draw_reversal_trials(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, node_path=None, delay_ms=2, stride=4):
+    def draw_reversal_trials(self, robot, environment, nodes, pose_path, position_threshold, success, start_pose, search_radius, heading_boundary, node_path=None, delay_ms=2, stride=4):
         """
         Replays one finished reversibility trial as an animation.
         PARAMETERS
@@ -1078,11 +1153,12 @@ class Graph():
             # Play last couple frames slower:
             in_finale = f > n_frames - max(80, n_frames // 10)
 
-            #Rebuild the backdrop for each frame
+            # Rebuild the backdrop for each frame
             environment.map.fill(self.WHITE)
             self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
             self.draw_active_reversal_path(map=environment.map, nodes=nodes, node_index=active_index)
-            self.draw_initial_robot_configuration(robot.init, environment=environment)   # root marker
+            #self.draw_initial_robot_configuration(robot.init, environment=environment)   # root marker
+            pygame.draw.rect(environment.map, self.GREEN, (210 - position_threshold, 210-position_threshold, 2*position_threshold, 2*position_threshold))
             pygame.draw.circle(environment.map, (0, 120, 255), (int(start_pose[0]), int(start_pose[1])), 5)
             
             # Visualizing the robot, robot's trail and search radius
@@ -1114,7 +1190,7 @@ class Graph():
         pygame.display.update()
         pygame.time.delay(1200)
 
-    def save_reversal_record(self, robot, environment, nodes, pose_path, success, start_pose, search_radius, heading_boundary, base_path, node_path=None, save_video=True, fps=30, stride=4, max_video_frames=1200):
+    def save_reversal_record(self, robot, environment, nodes, pose_path, position_threshold, success, start_pose, search_radius, heading_boundary, base_path, node_path=None, save_video=True, fps=30, stride=4, max_video_frames=1200):
         """
         Saves one reversibility trial: both a recorded .mp4 and the final state as a .png.
         """
@@ -1148,7 +1224,8 @@ class Graph():
             environment.map.fill(self.WHITE)
             self.draw_final_all_branches_2d(map=environment.map, nodes=nodes, color=environment.LIGHT_BROWN, width=1)
             self.draw_active_reversal_path(map=environment.map, nodes=nodes, node_index=active_index)
-            self.draw_initial_robot_configuration(robot.init, environment=environment)
+            #self.draw_initial_robot_configuration(robot.init, environment=environment)
+            pygame.draw.rect(environment.map, self.GREEN, (210 - position_threshold, 210-position_threshold, 2*position_threshold, 2*position_threshold))
             pygame.draw.circle(environment.map, (0, 120, 255), (int(start_pose[0]), int(start_pose[1])), 5)
 
             trail.append((int(x), int(y)))  
@@ -1209,14 +1286,15 @@ class Graph():
             current = node_obj.parent
 
     def draw_cost_text(self, map, environment, score, score_at_pick=None):
+        return # TODO: Add back
         if score is None:
             return
         if getattr(self, '_cost_font', None) is None:
             self._cost_font = pygame.font.SysFont(None, 28)
         lines = []
         if score_at_pick is not None:
-            lines.append(f"node_score_at_pick = {score_at_pick:.2f}")  # CHANGED: label now says score
-        lines.append(f"node_live_score = {score:.2f}")
+            lines.append(f"Node Score at Pick = {score_at_pick:.2f}") 
+        lines.append(f"Node Live Score = {score:.2f}")
         y = 10
         for line in lines:
             text_surface = self._cost_font.render(line, True, self.BLACK)

@@ -15,16 +15,17 @@ parser.add_argument('-mp', '--map_dimensions', nargs=2, type=int, metavar='', re
 parser.add_argument('-sp', '--step_penalty', type=float, metavar='', required=False, default=-1.0, help='The penalty given for every action that does not reach the goal.')
 parser.add_argument('-gr', '--goal_reward', type=float, metavar='', required=False, default=100.0, help='Reward given the instant the goal is reached.')
 parser.add_argument('-cs', '--cell_size', type=int, metavar='', required=False, default=28, help='The size of the cells in the grid')
-parser.add_argument('-tb', '--theta_bins', type=int, metavar='', required=False, default=8, help='Number of theta bins')
+parser.add_argument('-tb', '--theta_bins', type=int, metavar='', required=False, default=12, help='Number of theta bins')
 parser.add_argument('-vmag', '--v_magnitude', type=float, metavar='', required=False, default=10, help='The magnitude of linear velocity used.')
 parser.add_argument('-wmag', '--w_magnitude', type=float, metavar='', required=False, default=0.5, help='The magnitude of angular velocity used. (0 angular velocity is also always an action the robot can take regardless of w_mag)')
-parser.add_argument('-rev', '--use_reverse', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Whether or not to allow the robot to pursue -v_magnitude')
+parser.add_argument('-rev', '--use_reverse', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=True, help='Whether or not to allow the robot to pursue -v_magnitude')
 parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False, default=200, help='The max_steps taken in one episode.')
 parser.add_argument('-nte', '--number_training_episodes', type=int, metavar='', required=False, default=30000, help='The number of training episodes (Or the maximum number when searching for convergence).')
-parser.add_argument('-lr', '--learning_rate', type=float, metavar='', required=False, default=0.7, help='The learning rate.')
+parser.add_argument('-lr', '--learning_rate', type=float, metavar='', required=False, default=0.01, help='The learning rate.')
 parser.add_argument('-g', '--gamma', type=float, metavar='', required=False, default=0.9, help='The gamma.')
 parser.add_argument('-dr', '--decay_rate', type=float, metavar='', required=False, default=0.0002, help='The decay rate.')
 parser.add_argument('-aps', '--actions_per_state', type=int, metavar='', required=False, default=1, help='Number of actions per state.')
+parser.add_argument('-sv', '--save_video', type=str, metavar='', required=False, default=None, help='Base path to save the drive animation as .mp4 instead of showing it, like kRRT does.')
 
 # Position startings:
 parser.add_argument('-sx', '--start_x', type=float, metavar='', required=False, default=None,
@@ -38,7 +39,7 @@ parser.add_argument('-stheta', '--start_theta', type=float, metavar='', required
 # Convergence testing (QLearning still)
 parser.add_argument('-fec', '--find_episodes_for_convergence', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Train until Q-values converge and record in a csv (no fixed episode count).')
 parser.add_argument('-ci', '--checkpoint_interval', type=int, metavar='', required=False, default=500, help='Number of episodes between convergence checkpoints.')
-parser.add_argument('-ct', '--convergence_threshold', type=float, metavar='', required=False, default=-1, help='Max allowed delta between Q values in the same state before declaring convergence.')
+parser.add_argument('-ct', '--convergence_threshold', type=float, metavar='', required=False, default=1, help='Max allowed delta between Q values in the same state before declaring convergence.')
 
 # Logging and data collection
 parser.add_argument('-rp', '--repeat_program', type=bool, action=argparse.BooleanOptionalAction, metavar='', required=False, default=False, help='Repeats the program multiple times.')
@@ -156,8 +157,8 @@ elif args.find_episodes_for_convergence is False and not args.load_qtable: # 're
 
 if args.view_run_number:
     robot_images = ['images/initial.png', 'images/goal.png', 'images/robot.png']
-    replay(env, robot_images, Qtable_robot, max_steps=200, run_number=args.view_run_number, start=start_config)
+    replay(env, robot_images, Qtable_robot, max_steps=200, run_number=args.view_run_number, start=start_config, save_path=args.save_video)
 
 if args.show_agent_drive:
     robot_images = ['images/initial.png', 'images/goal.png', 'images/robot.png']
-    replay(env, robot_images, Qtable_robot, max_steps=200, start=start_config)
+    replay(env, robot_images, Qtable_robot, max_steps=200, start=start_config, save_path=args.save_video)

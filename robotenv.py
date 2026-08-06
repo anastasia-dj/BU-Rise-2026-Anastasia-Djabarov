@@ -15,7 +15,7 @@ class RobotEnv(gym.Env):
     The environment the Q-learning agent (Robot) lives in, including a visualization of the trained agent in the environment.
     """
 
-    def __init__(self, map_dimensions=(640, 480), goal=(320, 240), position_boundary=10, cell_size=40, theta_bins=8, v_magnitude=10.0, t_step=4.0, w_step=0.4, include_reverse=False, max_steps=200, step_penalty=-1.0, goal_reward=100.0):
+    def __init__(self, map_dimensions=(640, 480), goal=(320, 240), position_boundary=14, cell_size=40, theta_bins=8, v_magnitude=10.0, t_step=4.0, w_step=0.4, include_reverse=False, max_steps=200, step_penalty=-1.0, goal_reward=100.0, continuous_obs=True):
         super().__init__()
         
         # Map and goal
@@ -34,7 +34,7 @@ class RobotEnv(gym.Env):
         self.w_step = w_step 
 
         self.max_steps = max_steps        
-        self.step_penalty = step_penalty
+        self.step_penalty = step_penalty # TODO: Step penalty is equal to how far you are from the goal
         self.goal_reward = goal_reward
 
         # How many rows Q-Table will be
@@ -47,11 +47,16 @@ class RobotEnv(gym.Env):
 
         # How many columns Q-Table will be
         self.actions = [(self.v_magnitude, 0.0), (self.v_magnitude, self.w_step), (self.v_magnitude, -self.w_step)]
-        if include_reverse: # Possibly include reverse (Though kRRT cannot reverse so... Probably not)
+        if include_reverse: # Include the reverse 
             self.actions += [(-self.v_magnitude, 0.0), (-self.v_magnitude, self.w_step), (-self.v_magnitude, -self.w_step)]
 
         # Create observation and action space
-        self.observation_space = spaces.Discrete(n_states)
+        self.continuous_obs = continuous_obs
+        if continuous_obs:
+            self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
+        else:
+            self.observation_space = spaces.Discrete(n_states)
+
         self.action_space = spaces.Discrete(len(self.actions))
 
         # Starting position
@@ -87,6 +92,12 @@ class RobotEnv(gym.Env):
         theta_bin = min(max(int(theta_deg//self.theta_bin_size_deg), 0), self.theta_bins-1)
         return x_bin * self.y_bins * self.theta_bins  +  y_bin * self.theta_bins  +  theta_bin * 1
     
+    # --- Observable state 
+    def _obs(self):
+        if not self.continuous_obs:
+            return self.discretize(self.x, self.y, self.theta)
+        return np.array([2*self.x/self.WIDTH - 1, 2*self.y/self.HEIGHT - 1, math.cos(self.theta), math.sin(self.theta)], dtype=np.float32)
+    
     def step(self, action):
         # Called per each action. Returns the new_state, reward, terminated, truncated, and info
         v, w = self.actions[action]
@@ -109,12 +120,12 @@ class RobotEnv(gym.Env):
 
         reward = self.goal_reward if terminated else self.step_penalty
 
-        return self.discretize(self.x, self.y, self.theta), reward, terminated, truncated, {"elapsed_t": elapsed_t}
+        return self._obs(), reward, terminated, truncated, {"elapsed_t": elapsed_t}
     
     def reset_to(self, x, y, theta_rad):
         self.x, self.y, self.theta = x, y, theta_rad
         self.steps_taken = 0
-        return self.discretize(self.x, self.y, self.theta), {}
+        return self._obs(), {}
 
     def reset(self, seed=None, options=None):
         # Resets the state by spawning the robot configuration anywhere on the map (Except for the position boundary, with theta restrictions a certain distance from the walls (where there are no solutions))
@@ -141,7 +152,7 @@ class RobotEnv(gym.Env):
             break
 
         self.steps_taken = 0
-        return self.discretize(self.x, self.y, self.theta), {}
+        return self._obs(), {}
     
     # --- Visualization such, such ---
     def get_action(self, action):
@@ -149,24 +160,23 @@ class RobotEnv(gym.Env):
         v, w = self.actions[action]
         return v, w, self.t_step
 
-
-# TODO: Add 3D Matplotlib
-def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run_number=None):
+def replay_model(env, robot_images, model, start=None, max_steps=200, delay_ms=5, save_path=None):
     # Replay the animation of the trained agent
-    import pygame
+    import pygame, os
+    if save_path is not None:
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
     pygame.init()
+    writer = None
+    if save_path is not None:
+        import imageio
+        writer = imageio.get_writer(save_path + ".mp4", fps=30, macro_block_size=1)
     env_display = environment.Environment(dimensions=(env.WIDTH, env.HEIGHT), show_tree_building=True, has_obstacles=False)
     agent = robot_module.Robot(start=(0, 0, 0), robot_img=robot_images, length=0.01)
 
-    if run_number is not None:
-        random.seed(run_number+1)
-
-    # Allow for user to pass in their own starting position (start). If not, randomly generate.
     if start is None:
-        state, _ = env.reset()
+        obs, _ = env.reset()                                   
     else:
-        env.x, env.y, env.theta = start
-        state = env.discretize(env.x, env.y, env.theta)
+        obs, _ = env.reset_to(start[0], start[1], start[2])
 
     clock = pygame.time.Clock()
     trail = [] 
@@ -179,27 +189,40 @@ def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run
                 sys.exit()
         
         # Greedy policy for acting
-        action = int(np.argmax(Qtable[state]))
-        v, w, t = env.get_action(action)
+        action, _states = model.predict(obs, deterministic=True)
+        v, w, t = env.get_action(int(action))
         x0, y0, theta0 = env.x, env.y, env.theta
 
         # Advance environment
-        state, reward, terminated, truncated, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(int(action))
 
         # Regenerate the arc so it looks like the robot is driving 
-        xs, ys, thetas = agent.generate_arc_samples(x0, y0, theta0, v, w, t, delta=0.05)
+        elapsed_t = info["elapsed_t"]
+        xs, ys, thetas = agent.generate_arc_samples(x0, y0, theta0, v, w, elapsed_t, delta=0.05)
         for x, y, theta in zip(xs, ys, thetas):
             agent.update_visual(x, y, math.degrees(theta))
             env_display.map.fill(env_display.WHITE)
-            # Draw the position boundary. TODO: Add this in kRRT too
-            pygame.draw.circle(env_display.map, env_display.RED, (int(env.goal_x),int(env.goal_y)), int(env.position_boundary), width=1)
+
+            for gx in range(0, env.WIDTH + 1, env.cell_size):
+                pygame.draw.line(env_display.map, (225, 225, 225), (gx, 0), (gx, env.HEIGHT))
+            for gy in range(0, env.HEIGHT + 1, env.cell_size):
+                pygame.draw.line(env_display.map, (225, 225, 225), (0, gy), (env.WIDTH, gy))
+
+            goal_cell_left = env.goal_x_bin * env.cell_size
+            goal_cell_top = env.goal_y_bin * env.cell_size
+            pygame.draw.rect(env_display.map, env_display.GREEN, (goal_cell_left, goal_cell_top, env.cell_size, env.cell_size))
+
             trail.append((int(x), int(y)))
             for px, py in trail[::3]:
                 pygame.draw.circle(env_display.map, env_display.BROWN, (px, py), 1)
             agent.draw(map=env_display.map)
             pygame.display.update()
-            pygame.time.delay(delay_ms)
-        
+            if writer is not None:
+                frame = np.transpose(pygame.surfarray.array3d(env_display.map), (1, 0, 2))
+                writer.append_data(frame)
+            else:
+                pygame.time.delay(delay_ms)
+
         if terminated:
             print(f"[EVENT] Reached the goal in {step+1} actions")
             break
@@ -208,7 +231,8 @@ def replay(env, robot_images, Qtable, start=None, max_steps=200, delay_ms=5, run
             print(f"[EVENT] Ran out of steps without finding the goal, with a final distance of {env.distance_to_goal(env.x, env.y):.2f}")
             break
 
-    pygame.time.delay(1500)
+    if writer is not None:
+        writer.close()
     pygame.quit()
 
 def evaluate_and_log(env, Qtable, max_steps, n_eval_episodes, file_name, run_number, spawn_list, **params_to_log):
