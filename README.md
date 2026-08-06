@@ -1,17 +1,32 @@
 # RISE - Sample-Based Motion Planning vs. Model-Free RL
-## Status
-### kRRT
-The rewiring and reversal logic were both redesigned. Rewiring now copies an existing control input rather than approximating a straight-line connection, and reversal drives control inputs incrementally from the robot's actual position, using the control inputs of nodes with the "best" score. Reversibility testing (`drive_backwards()`) is currently being done to test whether a robot can retrace a path back to the root using only control inputs already stored in the tree. Sweeps of `reverse_search_radius` and `position_boundary` are in progress. Three candidate-selection modes (`cost`, `robot`, `root`) are currently being compared.
-
-### QLearning 
-A tabular agent is being trained as the RL counterpart to kRRT's reversibility testing. The current focus is establishing a fair comparison between kRRT and QLearning by creating an understandable resolution for QLearning (grid size, heading bins, action count).
 
 ## Overview 
-This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). The central question explored: can the tree be used in reverse, and can this method be used as an alternative for QLearning?
+This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide the system back to its root while matching Q-learning performance without the high sample cost and separate task-specific training.
 
-The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The QLearning algorithm is also observable, with a convergence function in process.
+The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The QLearning algorithm is also similarly observable.
 
 Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
+
+# Results
+kRRT and Q-Learning have been evaluated on the same 50 initial configurations (x, y, theta), with the results:
+
+| Algorithm | Success Rate | Mean Path Cost (px) | Std dev |
+| -------- | -------- | -------- | -------- |
+| Q-learning  | 100% (50/50)  | 184.20 | 65.996 |
+| kRRT Seed 4  | 94% (47/50)  | 198.53 | 65.996 |
+| kRRT Seed 45  | 94% (47/50)  | 209.18| 70.16 |
+
+No statistically significant difference was found between any of the values, with p > 0.07 (Welch's T-Test for mean cost difference, F-Test used for cost variance, and McNemar's exact test for success rate). kRRT achieved this performance with ~186x fewer simulated interactions than Q-learning. 
+
+The reversal process was additionally validated on hardware across 30 trials with a physical LIMO, reaching the root in all 30 (100%).
+
+
+## Status
+### kRRT
+The kRRT has been evaluted on seeds 4 and 45 on 50, with both seeds reaching a success rate of 94% after ~200,000 episodes. 
+
+### QLearning 
+The Q-learning has been evaluted on the same initial configurations as kRRT, with the discretization of 28px sized cells, 12 theta bins, and 6 total actions (straight, left and right for forward and backwards).
 
 ## File Organization
 ### kRRT
@@ -63,7 +78,7 @@ Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinody
     while steps < max_steps:
         if within position_boundary of root:
             return success
-        candidates = nodes within reverse_search_radius and reverse_heading_boundary of robot #(excluding visited) <-- Latest version no longer excludes visited
+        candidates = nodes within reverse_search_radius and reverse_heading_boundary of robot (excluding visited , if use_visited is enabled) 
         if no candidates:
             return failure # No candidates in the vicinity
         
@@ -76,7 +91,7 @@ Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinody
                 step robot to closed_form_step(x,y,theta,-v,-w,k*delta)
                 if within position_boundary of root:
                     return success
-                better = search again for a better node from current position #(excluding visited) <-- Latest version no longer excludes visited
+                better = search again for a better node from current position #(excluding visited, if use_visited is enabled)
                 if better is not None and better score is more preferable to best 
                     #visited.add(better)
                     v, w, t = better.control_input # New control overwrites old control

@@ -216,6 +216,7 @@ def main():
 
             iteration = 0
             k = 0 
+            # All the graph declarations (It's alot)
             graph.position_boundary = pb
             graph.orientation_boundary = args.orientation_boundary
             graph.show_tree_building = args.show_tree_building
@@ -239,7 +240,7 @@ def main():
             graph.shoot_rng = random.Random(args.seed)
             
             environment.make_obstacles()
-
+            
             if not args.show_tree_building and args.verbose:
                 tqdm.write('[EVENT] Simulating the system... Please wait.')
 
@@ -332,7 +333,7 @@ def main():
            
             # --------- Reversibility Testing Start ---------
             
-            # Handling a shared spawn set between
+            # Handling a shared spawn set between kRRT and Qlearning
             graph.nodes = nodes 
             shared_spawns = None
             if args.reverse_spawn_mode == 'file':
@@ -340,6 +341,7 @@ def main():
                     shared_spawns = [(float(r["x"]), float(r["y"]), float(r["theta_deg"])) for r in csv.DictReader(_file)]
                 assert len(shared_spawns) >= args.reversibility_trials, ("Shared spawn file has {len(shared_spawns)} poses but -rvt asked for {args.reversibility_trials} trials.")
 
+            # Handle seed reversibility
             if args.reversibility_seed is not None:
                     if args.repeat_program is True:
                         random.seed(s if args.repeat_program else args.reversibility_seed)
@@ -401,6 +403,7 @@ def main():
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
                     failure_position_drifts.append(position_drift)
 
+                # Record a cost log
                 if args.cost_log:
                     cost_file = file_name.replace('.csv', '_costs.csv')
                     cost_exists = os.path.isfile(cost_file)
@@ -431,7 +434,7 @@ def main():
             success_rate = successes/args.reversibility_trials if args.reversibility_trials > 0 else None
             avg_hops_on_success = sum(hops_for_reached_root_trials)/len(hops_for_reached_root_trials) if hops_for_reached_root_trials else None
             avg_total_path_cost = sum(total_path_costs)/len(total_path_costs) if total_path_costs else None
-            #mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
+            # mean_average_t = sum(average_ts)/len(average_ts) if average_ts else 0.0
             mean_rewire_error = sum(graph.rewire_errors)/len(graph.rewire_errors) if graph.rewire_errors else 0.0
             max_rewire_error = max(graph.rewire_errors) if graph.rewire_errors else 0.0
             avg_spawn_to_root_cost = sum(spawn_to_root_costs)/len(spawn_to_root_costs) if spawn_to_root_costs else None
@@ -498,7 +501,7 @@ def main():
                 final_cost = None
 
             
-            #file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
+            # file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
             graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_weight=rwhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
             
             if args.save_png:
@@ -506,7 +509,7 @@ def main():
                     base_name = f"tree_randomw_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{adb}"
                 elif args.w_mode == 'kwt':
                     base_name = f"tree_k{k_value}_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{adb}"
-                else: #'kwt2'
+                else: #' kwt2'
                     base_name = f"tree_k{k_value}tsquared_cwe{cwe}_sd{args.seed if args.seed is not None else 0}_adb{adb}"
                 
                 base_name += f"_rwhb{rwhb}_rwrad{rwrad}_rwhw{rwhw}_run{s+1}"
@@ -516,8 +519,8 @@ def main():
                 environment.clear_screen()
                 if args.obstacles:
                     environment.draw_obstacles()
-                #graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
-                #graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
+                # graph.draw_initial_robot_configuration(robot_img=robot.init, environment=environment)
+                # graph.draw_goal_robot_configuration(robot_img=robot.goal, environment=environment)
                 graph.draw_final_backdrop_2d(environment, nodes)
                 if graph.is_goal_found and args.path_to_goal:
                     graph.draw_path_to_goal(map=environment.map)
