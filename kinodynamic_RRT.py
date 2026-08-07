@@ -240,7 +240,7 @@ def main():
             graph.shoot_rng = random.Random(args.seed)
             
             environment.make_obstacles()
-            
+
             if not args.show_tree_building and args.verbose:
                 tqdm.write('[EVENT] Simulating the system... Please wait.')
 
@@ -329,9 +329,6 @@ def main():
                 tqdm.write(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
 
             export_tree(nodes, root_index=0, scale_px_per_m=100.0, file_name="tree.json")
-
-           
-            # --------- Reversibility Testing Start ---------
             
             # Handling a shared spawn set between kRRT and Qlearning
             graph.nodes = nodes 
@@ -340,6 +337,8 @@ def main():
                 with open(args.reverse_spawn_file, newline='') as _file:
                     shared_spawns = [(float(r["x"]), float(r["y"]), float(r["theta_deg"])) for r in csv.DictReader(_file)]
                 assert len(shared_spawns) >= args.reversibility_trials, ("Shared spawn file has {len(shared_spawns)} poses but -rvt asked for {args.reversibility_trials} trials.")
+
+            # --------- Reversibility Testing Start ---------
 
             # Handle seed reversibility
             if args.reversibility_seed is not None:

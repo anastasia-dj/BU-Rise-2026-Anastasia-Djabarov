@@ -7,7 +7,7 @@ The tree building and reversal process is observable end to end, with per-trial 
 
 Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
 
-# Results
+## Results
 kRRT and Q-Learning have been evaluated on the same 50 initial configurations (x, y, theta), with the results:
 
 | Algorithm | Success Rate | Mean Path Cost (px) | Std dev |
