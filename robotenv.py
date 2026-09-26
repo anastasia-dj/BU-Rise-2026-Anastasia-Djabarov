@@ -34,7 +34,7 @@ class RobotEnv(gym.Env):
         self.w_step = w_step 
 
         self.max_steps = max_steps        
-        self.step_penalty = step_penalty # TODO: Step penalty is equal to how far you are from the goal
+        self.step_penalty = step_penalty
         self.goal_reward = goal_reward
 
         # How many rows Q-Table will be
@@ -100,6 +100,8 @@ class RobotEnv(gym.Env):
     
     def step(self, action):
         # Called per each action. Returns the new_state, reward, terminated, truncated, and info
+        d_i = self.distance_to_goal(self.x, self.y)
+
         v, w = self.actions[action]
         n_checks = 15 # Number of times checked whether robot reached goal
         for k in range(1, n_checks + 1):
@@ -118,7 +120,15 @@ class RobotEnv(gym.Env):
         terminated = self.in_goal_cell(x_new, y_new)
         truncated = self.steps_taken >= self.max_steps
 
-        reward = self.goal_reward if terminated else self.step_penalty
+        # New potential reward shaping part:
+        #   F(s,a,s') = gamma*phi(s')-phi(s)
+        #   F(s,a,s') = gamma*(-d_f) - (-d_i) = -gamma*d_f + d_i = d_i - gamma*d_f 
+        max_dist = math.hypot(self.WIDTH, self.HEIGHT)
+        d_f = self.distance_to_goal(self.x, self.y)
+        gamma = 0.99 
+        shaping_function = (d_i - gamma*d_f)/max_dist*10 # Divide by max_dist so it doesnt swamp everything else
+
+        reward = self.goal_reward if terminated else self.step_penalty + shaping_function # R' = R + shaping_function
 
         return self._obs(), reward, terminated, truncated, {"elapsed_t": elapsed_t}
     

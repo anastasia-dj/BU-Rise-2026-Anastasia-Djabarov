@@ -1,8 +1,8 @@
-*.csv
 venv/
 .venv/
 env/
 __pycache__/
+*.csv
 *.pyc
 *.txt
 *.png
@@ -10,12 +10,12 @@ __pycache__/
 *.pkl
 *.sh
 *.mp4
-make_lhs_sweep.py
 *.json
 *.svg
 *.zip
-graphs/
-graphing_scripts/
-show_qtable.py
 *.db3
 *.yaml
+*.log
+*.db
+graphs/
+graphing_scripts/

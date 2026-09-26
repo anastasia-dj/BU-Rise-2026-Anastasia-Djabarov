@@ -19,7 +19,7 @@ env = Monitor(env, filename="ppo_training_log")
 model = PPO("MlpPolicy", env, verbose=1)
 
 # Train the agent and display a progress bar
-model.learn(total_timesteps=int(50000000), progress_bar=True)
+model.learn(total_timesteps=int(1000000), progress_bar=True)
 
 # Save the agent
 model.save("ppo_robot")

@@ -105,24 +105,24 @@ parser.add_argument('-rwhwl', '--rewire_heading_weight_list', nargs='+', type=fl
 
 # Reversibility configurations
 parser.add_argument('-rvhb', '--reverse_heading_boundary', type=float, metavar='', required=False,
-	default=90, help='The boundary of the heading difference which is used in reversing.')
+	default=30, help='The boundary of the heading difference which is used in reversing.')
 parser.add_argument('-rvradl', '--reverse_search_radius_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of reverse_search_radius values to sweep: e.g. -rvradl 10 20 30 50')
 parser.add_argument('-rvrad', '--reverse_search_radius', type=float, metavar='', required=False,
 	default=25, help='The search radius of the robot when deciding which node to reverse.')
 parser.add_argument('-rvt', '--reversibility_trials', type=int, metavar='', required=False, default=20,
-	help='Number of reversibility trials to do..')
+	help='Number of reversibility trials to do.')
 parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
 	help='Seed for selecting which nodes get tested in the reversibility.')
 parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node', 'map', 'tree_box', 'file'], 
-    metavar='', required=False, default='node', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
+    metavar='', required=False, default='tree_box', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
 parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['root', 'robot', 'cost'],
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
-parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=False, help='Exclude already-selected nodes from future searches during reversal.')
+parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=True, help='Exclude already-selected nodes from future searches during reversal.')
 parser.add_argument('-ms', '--max_steps', type=int, metavar='', required=False,
 	default=1000, help='The max steps taken in reversing.')
 parser.add_argument('-srvt', '--show_reversal_trials', type=str, choices=['off', 'all', 'failures', 'successes'], metavar='', required=False, default='off', help='Draw the reversal trials after running.')
-parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=0,
+parser.add_argument('-rvhw', '--reverse_heading_weight', type=float, metavar='', required=False, default=3.0,
 	help='Weight (px per degree) applied to heading mismatch in reversal candidate scoring. 0 = pure pass/fail filter (original behavior).')
 parser.add_argument('-rvhwl', '--reverse_heading_weight_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of reverse_heading_weight values to sweep: e.g. -rvhwl 0 0.5 1.0 1.5 2.0')
@@ -130,7 +130,7 @@ parser.add_argument('-rvs', '--reverse_use_samples', action=argparse.BooleanOpti
     help='During reversal, search every trajectory sample along each edge instead of only node endpoints.')
 parser.add_argument('-kl', '--k_value_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of k values to sweep: e.g. -kl 10 20 30 50')
-parser.add_argument('-wmode', '--w_mode', type=str, choices=['random', 'kwt2', 'kwt'], metavar='', required=False, default='random',
+parser.add_argument('-wmode', '--w_mode', type=str, choices=['random', 'kwt2', 'kwt'], metavar='', required=False, default='kwt',
 	help='How angular velocity w is generated: random (uniform w in [-0.5, 0.5]) or kwt (w = turn_direction * k_value / edge_time_duration**2)')
 parser.add_argument('-adbl', '--anti_drive_bias_list', nargs='+', type=float, metavar='', required=False,
     default=None, help='List of anti_drive_bias values to sweep: e.g. -adbl 0 10 25 50')
@@ -237,7 +237,7 @@ def main():
             graph.gear_change_penalty = args.reverse_gear_change_penalty
             graph.rewire_shot_count = args.rewire_shot_count
             graph.rewire_shot_exit_radius = args.rewire_shot_exit_radius
-            graph.shoot_rng = random.Random(args.seed)
+            graph.shoot_rng = random.Random(args.seed + s) # Note: Added s so the seeds differ per trials but are still repeatable
             
             environment.make_obstacles()
 
@@ -268,10 +268,22 @@ def main():
                 
                 # If the goal is not found
                 if not graph.is_goal_found or not args.goal_end_program:
-                    # Find a random node
-                    weights = [1.0/((1+graph.children_count[i])**cwe) for i in range(len(nodes))] # = (1/children_count)*^exp for each node
-                    weighted_random_number = random.choices(range(len(nodes)), weights=weights, k=1)
-                    random_parent_index = weighted_random_number[0]
+                    # NOTE: OLD CWE HERE:
+                    # weights = [1.0/((1+graph.children_count[i])**cwe) for i in range(len(nodes))] # = (1/children_count)*^exp for each node
+                    # weighted_random_number = random.choices(range(len(nodes)), weights=weights, k=1)
+                    # random_parent_index = weighted_random_number[0]
+                    # NOTE: NEW OLD VORONOI ESTIMATION HERE:
+                    x_rand = random.uniform(0, MAP_DIMENSIONS[0])
+                    y_rand = random.uniform(0, MAP_DIMENSIONS[1])
+                    old_closest_distance = None
+                    random_parent_index = None
+                    for i in range(len(nodes)):
+                        node_x = nodes[i].position[0]
+                        node_y = nodes[i].position[1]
+                        squared_distance = (node_x - x_rand)**2 + (node_y - y_rand)**2
+                        if old_closest_distance is None or squared_distance < old_closest_distance:
+                            old_closest_distance = squared_distance
+                            random_parent_index = i
 
                     # The result of propgation with random control function from a random node
                     result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
@@ -440,6 +452,7 @@ def main():
 
             stuck_no_candidate_count = failure_reasons.get('stuck_no_candidate', 0)
             max_steps_exceeded_count = failure_reasons.get('max_steps_exceeded', 0)
+            max_substeps_exceeded_count = failure_reasons.get('max_substeps_exceeded', 0)
 
             if args.verbose:
                 if success_rate is not None:
@@ -457,7 +470,8 @@ def main():
                 for i, n in enumerate(nodes):
                     if graph.is_goal_reached(n.position, n.orientation):
                         goal_indices.append(i)
-                
+
+            if goal_indices:
                 min_cost = None
                 min_index = None
                 for i in goal_indices:
@@ -501,7 +515,7 @@ def main():
 
             
             # file_name = f"Mode{args.reverse_selection_mode}__RWHeadingBound{rwhb}_RWRadius{rwrad}_RVHB{rvhb}_RVRad{rvrad}__RVThetaWeight{args.reverse_heading_weight}_PosBound{pb}__Vmag{args.v_magnitude}_CWE{args.children_weight_exponent}_MaxSteps{args.max_steps}.csv"
-            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_weight=rwhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count)
+            graph.log_results(file_name=file_name, run_number=s+1, theta_weight=rvhw, rewire_heading_weight=rwhw, rewire_heading_boundary=rwhb, rewire_search_radius=rwrad, reverse_heading_boundary=rvhb, reverse_search_radius=rvrad, success_rate=success_rate, avg_position_drift=avg_position_drift, avg_heading_drift=avg_heading_drift, avg_hops_on_success=avg_hops_on_success, avg_total_path_cost=avg_total_path_cost, cost=avg_spawn_to_root_cost, mean_rewire_error=mean_rewire_error, max_rewire_error=max_rewire_error, avg_failure_position_drift=avg_failure_position_drift, stuck_no_candidate_count=stuck_no_candidate_count, max_steps_exceeded_count=max_steps_exceeded_count, max_substeps_exceeded_count=max_substeps_exceeded_count)
             
             if args.save_png:
                 if args.w_mode == 'random':
