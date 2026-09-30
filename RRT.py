@@ -868,6 +868,9 @@ class Graph():
         pose_path = [(x, y, math.degrees(theta))]
         node_path = [None]
 
+        self.all_node_x = np.array([n.position[0] for n in nodes])
+        self.all_node_y = np.array([n.position[1] for n in nodes])
+
         # Save the max recorded poses. Take half of the poses if it ends up greater than 200,000. Helps with memory
         max_recorded_poses = 200000
         total_inner_substeps = 0
@@ -915,6 +918,7 @@ class Graph():
             committed_full_hop = True
             k=0
 
+            hold_over = False
             while True:
                 committed_full_hop = True
                 for k in range(1, steps_in_edge+1):
@@ -930,10 +934,12 @@ class Graph():
                     record((x_new, y_new, math.degrees(theta_new)), (index, score, score_at_pick)) # TODO NEW
                     distance_to_root_now = math.hypot(x_new - root.position[0], y_new - root.position[1])
 
+                    # NOTE OLD VERSION HAD A BUG THAT CAUSED FOR AN INFINITE LOOP HERE
                     if (distance_to_root_now > distance_at_pick + 60.0 or k * self.delta * abs(w) > 2 * math.pi):
-                        total_path_cost += k * self.delta * abs(v)
+                        #total_path_cost += k * self.delta * abs(v)
                         x, y, theta = x_new, y_new, theta_new
                         committed_full_hop = False
+                        hold_over = True
                         break
 
                     # if previous_distance_to_root is not None and not (distance_to_root_now < previous_distance_to_root):
@@ -950,7 +956,6 @@ class Graph():
 
                     mid_found = self.find_nearest_qualifying_node(nodes, x_new, y_new, math.degrees(theta_new), reverse_search_radius, reverse_heading_boundary, selection_mode, root_index, visited_indices, root, use_visited, use_samples, current_v=v)
 
-
                     if mid_found is not None:
                         mid_index, mid_score, mid_j = mid_found
                         mid_v, mid_w, mid_t = self.resolve_truncated_control(nodes[mid_index], mid_j)
@@ -966,7 +971,6 @@ class Graph():
                         elif selection_mode: # 'robot'
                             current_score = 0.0
                             candidate_score = math.hypot(mid_landing_x - x_new, mid_landing_y - y_new)
-
 
                         if mid_found is not None and self.verbose:
                                 tqdm.write(f"[DEBUG-REV-CANDIDATE] k={k}, current_node={index} (score={current_score:.2f}), best_qualifying={mid_index} (score={mid_score:.2f}), same_node={mid_index == index}")
@@ -992,6 +996,8 @@ class Graph():
                             committed_full_hop = False
                             break
                 else:
+                    break
+                if hold_over:
                     break
 
 
@@ -1070,7 +1076,15 @@ class Graph():
         """
         best = None
 
-        for i, n in enumerate(nodes):
+        if not use_samples:
+            close_in_x = np.abs(self.all_node_x - x) <= reverse_search_radius
+            close_in_y = np.abs(self.all_node_y - y) <= reverse_search_radius
+            nodes_to_check = np.nonzero(close_in_x & close_in_y)[0].tolist()
+        else:
+            nodes_to_check = range(len(nodes))
+
+        for i in nodes_to_check:
+            n = nodes[i]
             if i == root_index or (use_visited and i in visited_indices):
                 continue # Exclude the root index
             if n.trajectory_samples is None or n.control_input is None:

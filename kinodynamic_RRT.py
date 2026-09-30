@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 
 # Tree building
 parser = argparse.ArgumentParser(description='kRRT algorithm for a car-like robot.')
+parser.add_argument('-sb', '--sample_budget', type=int, metavar='', required=False, default=100000, 
+	help='Max simulated interactions per tree (extension attempts + rewire shots) and it overrides -n') 
 parser.add_argument('-o', '--obstacles', type=bool, action=argparse.BooleanOptionalAction,
 	metavar='', required=False, help='Obstacles on the map')
 parser.add_argument('-n', '--nodes', type=int, metavar='', required=False, default=10000,
@@ -115,7 +117,7 @@ parser.add_argument('-rvt', '--reversibility_trials', type=int, metavar='', requ
 parser.add_argument('-rvsd', '--reversibility_seed', type=int, metavar='', required=False, default=None,
 	help='Seed for selecting which nodes get tested in the reversibility.')
 parser.add_argument('-rvspawn', '--reverse_spawn_mode', type=str, choices=['node', 'map', 'tree_box', 'file'], 
-    metavar='', required=False, default='tree_box', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
+    metavar='', required=False, default='map', help='Where the robot spawns at the start of each reversibility trial: node (existing tree node), map (anywhere on the map), tree_box (random point within a trees bounding box)')
 parser.add_argument('-rvmode', '--reverse_selection_mode', type=str, choices=['root', 'robot', 'cost'],
     metavar='', required=False, default='cost', help='Candidate selection rule during reversal: cost (lowest cost-to-come), root (closest to root) or robot (closest to the robot itself).')
 parser.add_argument('-uv', '--use_visited', action=argparse.BooleanOptionalAction, default=True, help='Exclude already-selected nodes from future searches during reversal.')
@@ -206,7 +208,7 @@ def main():
             graph = RRT.Graph(start=x_init, goal=x_goal, map_dimensions=MAP_DIMENSIONS)
             if args.seed is not None:
                 if args.repeat_program is True:
-                    random.seed(s+10)
+                    random.seed(s + 10 + 100 * (args.seed - 1)) # So seeds can be changed and different seeds can be tested
                 else:
                     random.seed(args.seed)
             run = True
@@ -216,6 +218,7 @@ def main():
 
             iteration = 0
             k = 0 
+            propagations = 0
             # All the graph declarations (It's alot)
             graph.position_boundary = pb
             graph.orientation_boundary = args.orientation_boundary
@@ -244,9 +247,9 @@ def main():
             if not args.show_tree_building and args.verbose:
                 tqdm.write('[EVENT] Simulating the system... Please wait.')
 
-            progress_bar_tree = tqdm(total=args.nodes, desc=f"Growing rwhb={rwhb}, rwrad={rwrad}", position=1, leave=False)
+            progress_bar_tree = tqdm(total=args.nodes if args.sample_budget is None else args.sample_budget, desc=f"Growing rwhb={rwhb}, rwrad={rwrad}", position=1, leave=False)
             # Main growth loop
-            while run and k < args.nodes:
+            while run and (k < args.nodes if args.sample_budget is None else propagations + graph.total_rewire_shots < args.sample_budget):
                 if args.show_tree_building:
                     clock.tick(environment.FPS)
             
@@ -287,6 +290,7 @@ def main():
 
                     # The result of propgation with random control function from a random node
                     result = graph.new_state(random_parent_index, robot, environment, nodes, obstacles)
+                    propagations += 1
                     
                     # If the path did not collide with something... 
                     if result is not None:
@@ -311,12 +315,16 @@ def main():
                         # Update sampled config (k)
                         graph.number_of_nodes = len(nodes)
                         k += 1
-                        progress_bar_tree.update(1)
+                        if args.sample_budget is None:
+                            progress_bar_tree.update(1)
                         if args.verbose:
                             tqdm.write(f"[DEBUG] k={k}, len(tree)={len(nodes)}")
 
                         if args.rewire: 
                             graph.rewire_node(nodes=nodes, rewire_search_radius=rwrad, delta=args.delta, heading_boundary=rwhb, robot=robot, rewire_heading_weight=rwhw)
+
+                    if args.sample_budget is not None:
+                        progress_bar_tree.update(propagations + graph.total_rewire_shots - progress_bar_tree.n)
                     
                     if args.show_new_configurations and args.show_tree_building:
                         # Draws a small rotated robot image at every node position added to the tree 
@@ -336,7 +344,7 @@ def main():
             progress_bar_tree.close()
             none_count = sum(1 for n in nodes if n.control_input is None and n is not nodes[0]) 
             if args.verbose:
-                tqdm.write(f"[EVENT] Loop ended. Goal found: {graph.is_goal_found}, Total nodes: {len(nodes)}, k={k}.")
+                tqdm.write(f"[EVENT] Loop ended. Run {s+1}: nodes={len(nodes)-1}, sample_complexity={propagations + graph.total_rewire_shots} (growth {propagations} + rewire {graph.total_rewire_shots})")
                 tqdm.write(f"[STATS] heading_boundary of {rwhb} blocked {graph.candidates_blocked_by_heading}/{graph.candidates_in_radius} candidates.")
                 tqdm.write(f"[STATS] nodes with control_input=None (excluding root): {none_count}")
 
@@ -355,7 +363,7 @@ def main():
             # Handle seed reversibility
             if args.reversibility_seed is not None:
                     if args.repeat_program is True:
-                        random.seed(s if args.repeat_program else args.reversibility_seed)
+                        random.seed(s + 100 * (args.reversibility_seed - 1)) # So seeds can be changed across different runs for reversibility too (see line 211)
 
             successes = 0
             failure_reasons = {}
@@ -465,8 +473,8 @@ def main():
 
             # --------- Reversibility Testing End --------- 
 
+            goal_indices = []
             if graph.is_goal_found:
-                goal_indices = []
                 for i, n in enumerate(nodes):
                     if graph.is_goal_reached(n.position, n.orientation):
                         goal_indices.append(i)

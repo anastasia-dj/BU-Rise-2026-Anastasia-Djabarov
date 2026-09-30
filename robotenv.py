@@ -150,14 +150,14 @@ class RobotEnv(gym.Env):
             if self.in_goal_cell(self.x, self.y):
                 continue
             
-            # Check if robot is near the edges of the map or faced towards it
-            near_x_bottom = self.x < r and math.cos(self.theta) < 0
-            near_x_top = self.x > self.WIDTH - r and math.cos(self.theta) > 0
-            near_y_bottom = self.y < r and math.sin(self.theta) < 0
-            near_y_top = self.y > self.HEIGHT - r and math.sin(self.theta) > 0
+            # # Check if robot is near the edges of the map or faced towards it
+            # near_x_bottom = self.x < r and math.cos(self.theta) < 0
+            # near_x_top = self.x > self.WIDTH - r and math.cos(self.theta) > 0
+            # near_y_bottom = self.y < r and math.sin(self.theta) < 0
+            # near_y_top = self.y > self.HEIGHT - r and math.sin(self.theta) > 0
 
-            if near_x_bottom or near_x_top or near_y_bottom or near_y_top:
-                continue # Do not consider positions which are impossible to drive out of
+            # if near_x_bottom or near_x_top or near_y_bottom or near_y_top:
+            #     continue # Do not consider positions which are impossible to drive out of
 
             break
 
