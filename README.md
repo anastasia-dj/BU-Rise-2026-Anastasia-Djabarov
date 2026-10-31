@@ -1,4 +1,4 @@
-# RISE - Sampling-Based Motion Planning vs. Model-Free RL
+# Sampling-Based Motion Planning vs. Model-Free RL
 
 ## Overview 
 This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide a system back to its root, serving as a sample-efficient alternative to model-free reinforcement learning when the simulation budget is limited. 
@@ -182,7 +182,7 @@ The core design decisions (so far) for this implementation:
 ## Known Issues
 ### kRRT
 <a id="issue-1"></a>
-1. ~~Sampling used nearest-neighbor search, which frequently duplicated old node coordinates.~~ **Resolved** Sampling now uses an approximate Voronoi bias, and the new node is the propagation endpoint rather than the sampled point, so coordinates are not duplicated. See kRRT current design decisions. 
+1. ~~Sampling used nearest-neighbor search, which frequently duplicated old node coordinates.~~ **Resolved.** Sampling now uses an approximate Voronoi bias, and the new node is the propagation endpoint rather than the sampled point, so coordinates are not duplicated. See kRRT current design decisions. 
 <a id="issue-2"></a>
 2. ~~Previous path extraction (`get_path_coordinates()`) currently matches path nodes to edges by checking for an exact endpoint match with the successful path. This fails for two reasons: (a) nodes created via mid-edge rewiring aren't stored at the end of an edge, and (b) `generate_arc_samples()` truncates to floor(t/delta) steps while the real node is computed using the full, untruncated edge_time_duration. In both cases, the sample essentially does not match the node's true coordinates for many nodes.~~ **Resolved.** (a) is fixed by the Node refactor. Every node, including ones created via mid-edge rewiring, stores its own trajectory directly, so path extraction reads it off the node instead of searching for an edge endpoint match. (b) was fixed separately by manually having `generate_arc_samples()` append the true, untruncated endpoint as its final sample. 
 <a id="issue-3"></a>
