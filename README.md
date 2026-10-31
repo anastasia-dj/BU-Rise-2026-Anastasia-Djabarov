@@ -1,32 +1,84 @@
-# RISE - Sample-Based Motion Planning vs. Model-Free RL
+# RISE - Sampling-Based Motion Planning vs. Model-Free RL
 
 ## Overview 
-This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide the system back to its root while matching Q-learning performance without the high sample cost and separate task-specific training.
+This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide a system back to its root, serving as a sample-efficient alternative to model-free reinforcement learning when the simulation budget is limited. 
 
-The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The QLearning algorithm is also similarly observable.
+The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The PPO algorithm is also similarly observable.
 
 Built on the 2D Pygame environment and visualization of [AngeloEspinoza's kinodynamic RRT](https://github.com/AngeloEspinoza/kinodynamic-rrt-car-like-robot), with the original per-frame Euler-integrated motion replaced by a closed-form arc solution.
 
-## Results
+
+## Current Results
+kRRT and PPO were evaluated under a budget of 100,000 simulated interactions, where one interaction corresponds to a control input applied for a specified duration (a kRRT tree-propagation attempt or rewire shot, or a PPO environment step). They have both been evaluated on 30 seeds, testing 50 positions per heading (Facing towards the goal, facing away from the goal, clockwise, and counterclockwise) and location (North, East, South, West) pair.
+
+### Overall Table
+| Algorithm | Sample Budget | Success Rate (%) | Mean Path Cost (px) | Standard Deviation of Success Rate (%) |
+| -------- | -------- | -------- | -------- | -------- |
+| kRRT  | 100,000  | 95.8 | 199.42 | 1.290 |
+| PPO  | 100,000  | 57.1 | N/A* | 39.925 | 
+
+*PPO fails, on average, 42.9% of the time. The path cost is only calculated through successful paths. The mean path cost of PPO is not accurately reflective of its performance at 100k samples.
+
+### Per Heading Direction - kRRT
+| Robot Starting Heading | kRRT 100k success (%) | kRRT 100k Cost Average (px) |
+| -------- | -------- | -------- |
+| Toward goal | 98.6 | 120.4 |
+| Away from goal | 98.1 | 121.7 |
+| CCW (orthogonal) | 93.4 | 284.8 |
+| CW (orthogonal) | 93.1 | 279.5 |
+
+Certain initial robot orientations lead to lower success rates and longer paths for kRRT, as shown above (see [issue 9](#issue-9)).
+
+### Per Seed Breakdown (100,000 Sample Budget, 800 Trials per Seed)
+| Seed | kRRT success (%) | kRRT cost (px) | PPO success (%) |
+| -------- | -------- | -------- | -------- |
+| 1 | 96.4 | 197 | 14.0 |
+| 2 | 92.2 | 193 | 98.8 |
+| 3 | 97.9 | 185 | 14.0 |
+| 4 | 96.0 | 198 | 17.8 |
+| 5 | 93.8 | 218 | 22.1 |
+| 6 | 94.8 | 200 | 85.9 |
+| 7 | 94.0 | 200 | 48.9 |
+| 8 | 94.2 | 202 | 98.4 |
+| 9 | 96.5 | 195 | 77.0 |
+| 10 | 97.4 | 203 | 94.5 |
+| 11 | 96.9 | 193 | 75.0 |
+| 12 | 96.2 | 203 | 13.6 |
+| 13 | 96.4 | 198 | 97.1 |
+| 14 | 96.0 | 190 | 8.9 |
+| 15 | 96.1 | 190 | 91.4 |
+| 16 | 96.9 | 203 | 95.9 |
+| 17 | 95.8 | 188 | 11.0 |
+| 18 | 98.0 | 198 | 98.0 |
+| 19 | 95.9 | 212 | 12.9 |
+| 20 | 96.5 | 202 | 97.0 |
+| 21 | 95.4 | 204 | 9.4 |
+| 22 | 94.5 | 204 | 19.0 |
+| 23 | 96.2 | 202 | 86.9 |
+| 24 | 94.8 | 193 | 4.5 |
+| 25 | 94.8 | 203 | 98.8 |
+| 26 | 95.5 | 189 | 99.8 |
+| 27 | 96.1 | 207 | 12.5 |
+| 28 | 95.6 | 198 | 92.5 |
+| 29 | 97.8 | 212 | 99.5 |
+| 30 | 95.9 | 200 | 18.9 |
+
+## Previous Results (BU RISE)
 kRRT and Q-Learning have been evaluated on the same 50 initial configurations (x, y, theta), with the results:
 
 | Algorithm | Success Rate | Mean Path Cost (px) | Std dev |
 | -------- | -------- | -------- | -------- |
 | Q-learning  | 100% (50/50)  | 184.20 | 65.996 |
-| kRRT Seed 4  | 94% (47/50)  | 198.53 | 65.996 |
-| kRRT Seed 45  | 94% (47/50)  | 209.18| 70.16 |
+| kRRT Seed 4  | 94% (47/50)  | 198.53 | 70.16 |
+| kRRT Seed 45  | 94% (47/50)  | 209.18| 65.188 |
 
 No statistically significant difference was found between any of the values, with p > 0.07 (Welch's T-Test for mean cost difference, F-Test used for cost variance, and McNemar's exact test for success rate). kRRT achieved this performance with ~186x fewer simulated interactions than Q-learning. 
 
 The reversal process was additionally validated on hardware across 30 trials with a physical LIMO, reaching the root in all 30 (100%).
 
-
 ## Status
 ### kRRT
-The kRRT has been evaluted on seeds 4 and 45 on 50, with both seeds reaching a success rate of 94% after ~200,000 episodes. 
-
-### QLearning 
-The Q-learning has been evaluted on the same initial configurations as kRRT, with the discretization of 28px sized cells, 12 theta bins, and 6 total actions (straight, left and right for forward and backwards).
+Current implementations of softmin are undergoing to improve success rate and decrease mean path cost.
 
 ## File Organization
 ### kRRT
@@ -34,18 +86,23 @@ The Q-learning has been evaluted on the same initial configurations as kRRT, wit
 - **robot.py** - Robot class: kinematics (`closed_form_step`, `generate_arc_samples`), drawing and rotation.
 - **environment.py** - Environment class: map setup, obstacles, and trail drawing.
 - **RRT.py** - Graph class: tree recording, sampling, `simulate()` (simulates one full edge per call), `rewire_node()` (rewires nodes within a search radius), path extraction, plotting, reversibility testing (`drive_backwards()`, `find_nearest_qualifying_node`) and CSV result logging (`log_results()`).
-- **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check -> reversibility testing). Now also supports automated parameter sweeps (`-hbl`, `-radl`) and repeated trials (`-rp`/`-rpn`).
-### QLearning
-- **robotenv.py** - RobotEnv class (Gym environment): kinematics, state discretization, goal/step logic, and `replay()`/`evaluate_and_log()` for visualization and CSV logging.
-- **qlearning.py** - QLearning class: Q-table initialization, greedy/epsilon-greedy action selection, training/evaluation, and `find_episodes_for_convergence()`.
-- **robotagent.py** - Main script: parses command-line arguments, builds the environment, trains (fixed-episode or convergence-based), and logs/replays results.
+- **kinodynamic_RRT.py** - Main script: parses command-line arguments, then runs the main loop (sampling -> simulate -> tree recording -> `rewire_node()` -> goal check -> reversibility testing). Now also supports automated parameter sweeps (`-rwhbl`, `-rwradl`, etc.) and repeated trials (`-rp`/`-rpn`).
+- **kRRT_lib.py** - kRRT as importable functions: `make_environment()` (environment, robot and obstacles), `grow_two_trees()` (grows two trees facing opposite directions & returns the metrics), `evaluate_reversal()` (runs reversal trials from random spawns and records each trial) and `run_lhs_point()` (runs a specific lhs sweep point given all lhs sweep commands). 
+- **export_tree.py** - Exports the tree as a JSON file.
+### PPO
+- **robotenv.py** - RobotEnv class (Gym environment): kinematics, state discretization, goal/step logic, and `replay_model()` for visualization.
+- **ppo_robot.py** - Trains the PPO model (Stable-Baselines3).
+### Both
+- **comparison.py** - Runs kRRT and PPO on the same starts. 
 
 ## Pseudocode
 ### kRRT
     nodes = [Node(position=x_init, parent=0, cost=0)]  # root's parent is itself
 
-    while not goal_found and num_nodes < max_nodes:
-        random_parent_index = random_existing_node(nodes) # Sample a random node (NOT configuration)
+    while propagations + rewire_shots < sample_budget: # one interaction = one extension attempt or one rewire shot
+        x_rand = random point on the map # Estimated Voronoi-Bias Sampling
+        random_parent_index = nearest existing node to x_rand
+        propagations += 1 # Counted within sampling budget, even if it is disregarded later
 
         # --- Simulate a node and create an arc-like edge ---
         v = constant                                        # Fixed
@@ -58,7 +115,7 @@ The Q-learning has been evaluted on the same initial configurations as kRRT, wit
             continue                # Discard edge if any point along it collides
 
         x_end = trajectory[-1]
-        new_node = Node(position=x_end, parent=random_parent_index, cost=nodes[random_parent_index].cost + t, trajectory_samples=trajectory)
+        new_node = Node(position=x_end, parent=random_parent_index, cost=nodes[random_parent_index].cost + t*|v|, trajectory_samples=trajectory, control_input = v,w,t)
         append new_node to nodes
 
         # --- Rewiring ---
@@ -66,11 +123,15 @@ The Q-learning has been evaluted on the same initial configurations as kRRT, wit
             if heading difference within rewire_heading_boundary:
                 candidate_cost = cost[candidate's parent] + (elapsed time to that sample)
                 if candidate_cost < cost[new_node]:
-                    new_node.parent = candidate.parent
-                    new_node.control_input = (candidate_v, candidate_w, truncated_t)
-                    new_node.cost = candidate_cost
-                    # new_node.position is NOT updated
-            
+                    shoot random (v, w, t) from the sample through 3 rounds refining around the best
+                    if cost[cost_to_come through closest and best heading-aligned shot] is cheaper than cost[new_node] and is within rewire search radius:
+                        sample becomes a node (if not previously a node)
+                        new_node.parent = sample
+                        new_node.control_input = (shot_v, shot_w, shot_t)
+                        new_node.cost = sample.cost + shot_t
+                        new_node.position = where the shot lands
+
+                                
     # --- Reversibility Testing ---
     spawn robot at (x, y, theta)
     #visited = empty set
@@ -82,9 +143,10 @@ The Q-learning has been evaluted on the same initial configurations as kRRT, wit
         if no candidates:
             return failure # No candidates in the vicinity
         
-        best = candidate with lowest score # cost-to-come, distance to robot, or distance to root - depends on mode
+        best = candidate with lowest score of argmin OR calculation by softmin 
         #visited.add(best)
         v, w, t = best.control_input
+        t = reverse_extension_multiplier * t # A hop may drive longer than a stored edge
 
         while True:
             for k in 1(t/delta) # Reverse in increments
@@ -102,62 +164,41 @@ The Q-learning has been evaluted on the same initial configurations as kRRT, wit
 
     return failure # max steps exceeded
 
-### QLearning
-    Qtable = zeros(state_space, action_space)
-
-    # --- Training ---
-    for episode in range(n_training_episodes):
-        epsilon = min_epsilon + (max_epsilon - min_epsilon) * exp(-decay_rate * episode)
-        state = env.reset() # Random starting position (x,y,theta); excludes configurations facing against a wall
-
-        for each step in range(max_steps):
-            if random() > epsilon:
-                action = the best known action          # Explore
-            else:
-                action = a random valid action          # Exploit
-            
-            new_state, reward, terminated, truncated = env.step(action) Qtable[state][action] += learning_rate * (reward + gamma * max(Qtable[new_state]) - Qtable[state][action]) # Note: Learning rate is currently fixed
-
-            if terminated or truncated:
-                break
-            
-            state = new_state
-
 
 ## Current Design Decisions
-The core design decisions (so far) were suggested by Professor Tron and adopted for this implementation:
+The core design decisions (so far) for this implementation:
 ### kRRT
-- **Off-branch reversal** - During reversal the robot searches the whole tree from its current position rather than walking its own .parent chain back to the root. It selects a nearby node, reverses that node's control input, and drives it incrementally, switching to a better node if one comes into range mid-motion. This allows the robot to cross between branches and use only existing control inputs.
-- **Sibling-copy rewiring** - When a cheaper connection is found, the new node adopts the candidate's parent and a truncated copy of the candidate's control input, becoming a child of that parent. Every rewired connection is therefore a real, already-simulated control input rather than a straight-line approximation. The node's position is not updated to the adopted control's true endpoint, so each rewired edge carries a small approximation error - see [Known Issue #8](#issue-8)
-- **Sampling by extending from a random existing node** - Rather than sampling a random point on the map and connecting to the nearest existing node (as in standard RRT*), a random node already in the tree is selected and extended directly. This makes each new node's parent known at creation, removing the need to search for one - see [Known Issue #1](#issue-1)
-- **v fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution
+- **Off-branch reversal** - During reversal the robot searches the whole tree from its current position rather than walking its own .parent chain back to the root. It selects a nearby node, reverses that node's control input, and drives it incrementally, switching to a better node if one comes into range mid-motion. This allows the robot to cross between branches and use only existing control inputs. Currently, softmin is being implemented.
+- **Bi-directional tree implementation** - Single tree growth biases most node orientations in the same heading of the goal. For this reason, we have implemented a bi-directional tree growth starting from the root, which grows two trees in opposite directions, each with half of the sample budget, and then merges them.
+- **Multi-shot rewiring** - When a cheaper connection is found, the new node shoots 3 batches of increasingly precise randomized-propagations. Within a certain radius, the closest propagation is chosen. Then, the cost between the cost-to-root is compared to the previous, and the cheapest path is chosen.
+- **Approximate Voronoi-bias sampling** - A random point is sampled on the map, and the nearest existing node is propagated. 
+- **|v| fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution
 - **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
 
-### QLearning
-- **Off-map actions (as well as unrecoverable configurations) are rejected and not executed.** Before an action is taken, its resulting position is checked against the map boundary. Invalid actions are excluded from both exploration and greedy selection. A similar process is used to remove spawning in unrecoverable configurations (e.g. the robot is facing a wall and, since it is nonholonomic, cannot turn around).
-- **Convergence decides training length.** `find_episodes_for_convergence()` tracks each state's best learned value over checkpointed intervals and stops once the largest change across all states drops below a threshold.
+### PPO
+- **Potential Reward-Shaping** - An implementation of potential reward-shaping from "Policy invariance under reward transformations: Theory and application to reward shaping" (Andrew Y. Ng, Daishi Harada, Stuart Russell) has been added to decrease time to convergence without influencing the optimal policy.
+
 
 ## Known Issues
 ### kRRT
 <a id="issue-1"></a>
-1. ~~Sampling used nearest-neighbor search, which frequently duplicated old node coordinates.~~ **Resolved** — sampling now extends directly from a randomly chosen existing node, so parent is known at creation. 
+1. ~~Sampling used nearest-neighbor search, which frequently duplicated old node coordinates.~~ **Resolved** Sampling now uses an approximate Voronoi bias, and the new node is the propagation endpoint rather than the sampled point, so coordinates are not duplicated. See kRRT current design decisions. 
 <a id="issue-2"></a>
 2. ~~Previous path extraction (`get_path_coordinates()`) currently matches path nodes to edges by checking for an exact endpoint match with the successful path. This fails for two reasons: (a) nodes created via mid-edge rewiring aren't stored at the end of an edge, and (b) `generate_arc_samples()` truncates to floor(t/delta) steps while the real node is computed using the full, untruncated edge_time_duration. In both cases, the sample essentially does not match the node's true coordinates for many nodes.~~ **Resolved.** (a) is fixed by the Node refactor. Every node, including ones created via mid-edge rewiring, stores its own trajectory directly, so path extraction reads it off the node instead of searching for an edge endpoint match. (b) was fixed separately by manually having `generate_arc_samples()` append the true, untruncated endpoint as its final sample. 
 <a id="issue-3"></a>
-3. ~~Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Since this project is based onf orward propagation only (no steering), there is no v,w or t which can be calcualted to reach a specific point.~~ **Resolved.** Reversal now only ever uses control inputs that already exist within the tree.
+3. ~~Rewiring currently uses straight-line distance as an approximate connection cost between two arbitrary points. Since this project is based on forward propagation only (no steering), there is no v,w or t which can be calculated to reach a specific point.~~ **Resolved.** Reversal now only ever uses control inputs that already exist within the tree.
 <a id="issue-4"></a>
 4. ~~Currently, checking for a collision only includes the initial and final position. This does not account for the possibility that an obstacle may be between the initial and final positions.~~ **Resolved.** Within `simulate()`, the algorithm now cycles through `xs_samples`, `ys_samples`, and `thetas_samples`, checking each sampled pose for collisions to verify that the entire path is collision-free.
 <a id="issue-5"></a>
-5.~~ Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all.~~ **Partially resolved.** A `rewire_heading_boundary` parameter was implemented, blocking a rewire from occurring if the heading difference between two configurations exceeds a set threshold. Its effect has not been re-measured since the rewiring and reversal redesign.
+5. ~~Theta oscillates significantly along the final path even as x/y progress steadily toward the goal. Both are sampled with equal per-edge randomness (via w), but only position feeds into cost and rewiring's selection criteria (cost = v*t) to become a successful candidate. This means that arcs that happen to make preferred positional movements are kept during rewiring, while heading has no equivalent selection pressure at all.~~ **Partially resolved.** A `rewire_heading_boundary` parameter was implemented, blocking a rewire from occurring if the heading difference between two configurations exceeds a set threshold. Its effect has not been re-measured since the rewiring and reversal redesign.
 <a id="issue-6"></a>
 6. ~~The 3D plot for simulations that do reach the goal shows incomplete portions and visible "jumps" between segments of the path. The suspected cause is from a missed update of .trajectory_samples.~~ **Resolved.** In `rewire_node()`​, the `trajectory_samples`​ for the promoted node and for the node on the edge containing it were being updated, but the `trajectory_samples​` of the node being rewired itself were not, resulting in a gap. This was fixed by adding the new parent's configuration and the node's own configuration to `trajectory_samples`,​ and by switching the 3D plot from `ax.scatter​` to `ax.plot`​ so these two points create a continuous line.
 <a id="issue-7"></a>
-7. Currently, the random control inputs are propagated from nodes which are already present within the tree at v=v_magnitude. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue. **Update:** an `anti_drive_bias` parameter was added, giving an edge a configurable change of driving with `v=0` or `v=-v_magnitude` intended to encourage exploration into underrepresented regions of the map. Additionally, a `child_weight_exponent` has been added to encourage further growth from nodes with less children. These implementations have not been rigorously validated.
+7. ~~Currently, the random control inputs are propagated from nodes which are already present within the tree at v=v_magnitude. This causes for a "fan"-like distribution of nodes, in which one half of the map is extensively covered, while the other half of the map is nearly empty. Since the goal of this project is to be able to use the tree from any resulting position, this node distribution is an issue.*~~ **Resolved.** An approximate Voronoi bias sampling creates a visually even tree consistently.
 <a id="issue-8"></a>
-8. Rewired nodes keep their original position while adopting a truncated control input, so the adopted control lands near the node rather than on it. Each rewired edge carries a small approximation error bounded by `rewire_search_radius`.
+8. ~~Rewired nodes keep their original position while adopting a truncated control input, so the adopted control lands near the node rather than on it. Each rewired edge carries a small approximation error bounded by `rewire_search_radius`.~~ **Resolved.** The node now moves to the landing pose of the rewiring shot.
+<a id="issue-9"></a>
+9. kRRT’s path cost and success rate depend on the initial heading (see the per-heading table above). Originally, we found that having one tree biases the node orientations towards one direction, decreasing node heading diversity. We addressed this by growing a bi-directional tree with the goal as the root. However, there is likely still a lack of nodes holding orientations orthogonal to the goal, which is where the sideways (CW/CCW) starts fall behind.
 
-### QLearning
-1. The off-map action check only verifies an action's final endpoint, not its full path. An action may pass through the edge of the map as long as its initial and final positions are within the boundaries. This does not pose an issue for the simulated comparison. However, in the real world, where it is impossible to walk through a wall, it may become an issue relevant for hardware deployment. 
-
-### Overall
-1. Currently, there are minor implementation discrepancies between QLearning and kRRT which may affect comparison - they are actively being worked through. The current list is as follows: ~~QLearning's position boundary is a square, kRRT's position boundary is a circle;~~ QLearning is bounded by the map, kRRT is not bounded; ~~QLearning's map is slightly larger than kRRT (Was done to accomodate an odd number of cells to have a center "goal" cell).~~ (Crossed out issues have been **Resolved**)
+## Acknowledgements
+I greatly acknowledge and thank Professor Tron for his support, patience and time throughout the development of this research project. I additionally extend thanks to PhD students Taha Ondongan and Idris Seidu for their mentorship, and to the EPIC and RASTIC laboratories for their invaluable resources and welcoming research environment. I further acknowledge RISE for the opportunity to begin on this research.

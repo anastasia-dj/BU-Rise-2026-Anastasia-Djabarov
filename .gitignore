@@ -17,5 +17,7 @@ __pycache__/
 *.yaml
 *.log
 *.db
+*.pptx
 graphs/
-graphing_scripts/
+MASTER_LHS/
+__pycache__/RRT.cpython-313.pyc

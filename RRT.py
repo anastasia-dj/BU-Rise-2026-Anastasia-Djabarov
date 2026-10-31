@@ -13,6 +13,9 @@ except Exception:
 import matplotlib.pyplot as plt
 from node import Node
 from tqdm import tqdm
+import torch
+import torch.nn as nn
+import time
 
 class Graph():
     """
@@ -23,6 +26,7 @@ class Graph():
     map_dimensions : tuple (width and height)
     """
 
+    use_softmin = True # Todo add as CLI flag
     def __init__(self, start, goal, map_dimensions):
         self.x_init = start
         self.x_goal = goal
@@ -33,12 +37,15 @@ class Graph():
         self.candidates_blocked_by_heading = 0
         self.children_count = [0]
 
+        self.softmin_temperature = 5 # TODO: MAKE CLI FLAG
+
         self.robot_position_history = []
         self.robot_orientation_history = []
         self.controls = []
         self.is_goal_found = False
         self.iteration = 0
         self.total_rewire_shots = 0
+        self.promotions = 0 # Number of points promoted, just a counter
 
         self.robot_position_history.append(self.x_init[:2]) # List accumulating history
         self.robot_orientation_history.append(math.degrees(self.x_init[2]))
@@ -65,6 +72,8 @@ class Graph():
         # Store added states (i.e. multiple x_new)
         self.x_news = []
         self.theta_news = []
+
+        self.softmin_control = None
 
         # Colors
         self.WHITE = (255, 255, 255)
@@ -270,7 +279,7 @@ class Graph():
                     if angle_mismatch <= heading_boundary:
                         # Cost as if new_node were sample j of candidate_node's edge
                         candidate_cost = nodes[candidate_node.parent].cost + (j+1)*delta*abs(candidate_v) 
-                        score = candidate_cost + rewire_heading_weight * angle_mismatch
+                        score = candidate_cost + distance + rewire_heading_weight * angle_mismatch
                         if score < best_score:
                             best_score = score
                             best_choice = (i,j, candidate_v, candidate_w, candidate_cost)
@@ -290,10 +299,15 @@ class Graph():
         old_parent = new_node.parent
         old_cost = new_node.cost
 
-        # NEW SHOOTING:
-        parent_node = nodes[candidate_node.parent]
-        px, py = parent_node.position
-        ptheta = math.radians(parent_node.orientation)
+        # Rewiring shooting:
+        xs, ys, thetas = candidate_node.trajectory_samples
+        is_node = (j==len(xs) - 1) # Check if the point is a node
+        _,_,t_j= self.resolve_truncated_control(candidate_node, j)
+        cost_init = nodes[candidate_node.parent].cost + t_j*abs(candidate_v) # Cost of the point, since points aren't nodes they don't have cost saved
+        px, py, ptheta = xs[j], ys[j], math.radians(thetas[j])
+
+        # parent_node = nodes[candidate_node.parent]
+        # ptheta = math.radians(parent_node.orientation)
         best_shot, best_shot_score, shots_fired, found_good_enough = None, None, 0, False
         shots_per_round, keep_best = 25,5
         pool = []
@@ -317,7 +331,7 @@ class Graph():
             
             pool.append([score, v, w, t])
 
-            if d <= self.rewire_shot_exit_radius and (parent_node.cost + t * abs(v)) < old_cost:
+            if d <= self.rewire_shot_exit_radius and (cost_init + t * abs(v)) < old_cost:
                 found_good_enough = True
                 break
         
@@ -364,19 +378,36 @@ class Graph():
 
                 pool.append([score, v0, w, t])
 
-                if d <= self.rewire_shot_exit_radius and (parent_node.cost + t * abs(v0)) < old_cost:
+                if d <= self.rewire_shot_exit_radius and (cost_init + t*abs(v0)) < old_cost:
                     found_good_enough = True
                     break
 
         self.total_rewire_shots += shots_fired
         v, w, t, land_x, land_y, land_theta = best_shot
-        shot_cost = parent_node.cost + t*abs(v)
+        shot_cost = cost_init + t*abs(v)
         if shot_cost >= old_cost or math.hypot(land_x - new_node.position[0], land_y - new_node.position[1]) > rewire_search_radius:
             return # Shot connection showed no improvement
+
+        if is_node:
+            new_parent = candidate_index
+
+
+        # new_node = node that was just grown
+        # candidate_node = existing node somewhere else at the tree, and the point sits at the end of candidate edge
+        # candidate_node.parent starts that edge 
+        else:
+            promoted = Node(position=(xs[j], ys[j]), orientation=thetas[j], parent=candidate_node.parent, cost=cost_init, control_input=(candidate_v, candidate_w, t_j), trajectory_samples=(xs[:j+1], ys[:j+1], thetas[:j+1]))
+            nodes.append(promoted)
+            new_parent=len(nodes)-1
+            self.children_count.append(1)
+            candidate_node.parent=new_parent
+            candidate_node.control_input=(candidate_v, candidate_w, candidate_node.control_input[2]-t_j) # Shorten candidate_node because it comes from position as its parent now
+            candidate_node.trajectory_samples=(xs[j+1:], ys[j+1:], thetas[j+1:]) # Same as the line before 
+            self.promotions+=1
         
         self.children_count[new_node.parent] -= 1
-        old_samples = new_node.trajectory_samples
-        new_node.parent = candidate_node.parent
+        # old_samples = new_node.trajectory_samples
+        new_node.parent = new_parent
         self.children_count[new_node.parent] += 1
         new_node.control_input = (v, w, t)
         new_node.cost = shot_cost                               
@@ -836,7 +867,7 @@ class Graph():
         path.append(0)
         return path
 
-    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, use_visited, root_index=0, use_samples=False, max_steps=1000, max_non_improving_hops=1000, max_inner_substeps=200000):
+    def drive_backwards(self, nodes, robot, start_x, start_y, start_theta_deg, reverse_search_radius, reverse_heading_boundary, position_threshold, selection_mode, use_visited, root_index=0, use_samples=False, max_steps=1000, max_non_improving_hops=1000, max_inner_substeps=200000, max_seconds = None):
         """
         Off-branch reversal. At every step, search the robot's current position and heading. Find the nearest node and reverse its control input. 
         PARAMETERS
@@ -874,6 +905,7 @@ class Graph():
         # Save the max recorded poses. Take half of the poses if it ends up greater than 200,000. Helps with memory
         max_recorded_poses = 200000
         total_inner_substeps = 0
+        start_time = time.time()
         def record(pose, node):
             pose_path.append(pose)
             node_path.append(node)
@@ -907,7 +939,10 @@ class Graph():
 
             index, cost, j = nearest_qualifying_node
             visited_indices.add(index)
-            v, w, t = self.resolve_truncated_control(nodes[index], j)
+            if self.use_softmin:
+                v, w, t = self.softmin_control
+            else:
+                v, w, t = self.resolve_truncated_control(nodes[index], j)
             if self.verbose:
                 tqdm.write(f"[DEBUG-REV-PICK] hops={n_hops}, robot_pos=({x:.1f}, {y:.1f}) and theta={math.degrees(theta)}, picked_node={index}, node_pos=({nodes[index].position[0]:.1f}, {nodes[index].position[1]:.1f}), node_cost={nodes[index].cost:.2f}, dist_node_to_root={math.hypot(nodes[index].position[0]-root.position[0], nodes[index].position[1]-root.position[1]):.1f}")
             score_at_pick = cost
@@ -926,6 +961,9 @@ class Graph():
                     if total_inner_substeps > max_inner_substeps:
                         average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
                         return False, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'max_substeps_exceeded', pose_path, node_path
+                    if max_seconds is not None and time.time() - start_time > max_seconds:
+                        average_t = sum(selected_t_values)/len(selected_t_values) if selected_t_values else 0.0
+                        return False, x, y, math.degrees(theta), n_hops, total_path_cost, average_t, 'timed_out', pose_path, node_path
                     x_new, y_new, theta_new = robot.closed_form_step(x,y,theta,-v,-w, k*self.delta)
                     current_heading_deg = math.degrees(theta_new)
                     score = self.live_node_score(nodes, index, current_heading_deg, selection_mode, root, x_new, y_new)
@@ -1075,6 +1113,7 @@ class Graph():
             (Of the lowest cost real node within both reverse_search_radius and reverse_heading_boundary)
         """
         best = None
+        candidates = []
 
         if not use_samples:
             close_in_x = np.abs(self.all_node_x - x) <= reverse_search_radius
@@ -1109,6 +1148,7 @@ class Graph():
                                 score += self.gear_change_penalty
                         elif selection_mode == 'robot':
                             score = distance + self.heading_weight * mismatch
+                        candidates.append((i, score, j))
                         if best is None or score < best[1]:
                             best = (i, score, j)
 
@@ -1133,9 +1173,42 @@ class Graph():
                     score += self.gear_change_penalty                      
             elif selection_mode == 'robot':
                 score = distance + self.heading_weight * mismatch
+            candidates.append((i, score, last_j))
             if best is None or score < best[1]:
                 best = (i, score, last_j) 
-                
+
+        # Softmin added
+        if self.use_softmin and current_v is None and best is not None:
+            # Softmin: weight = exp(-score) / (sum of exp(-score) over all candidates) (See Pytorch website)
+            m = nn.Softmin(dim=1)
+            scores = torch.tensor([[score for (i, score, j) in candidates]], dtype=torch.float64)
+            output = m(scores/self.softmin_temperature) # Softmin over all the scores (all scores add to 1)
+            percentages = output[0].tolist()
+
+            # Add up all the weighted percentages of going forward (If not, then the velocity magnitude will not equal 10)
+            forward_percentage = 0.0
+            for (i, score, j), percent in zip(candidates, percentages):
+                if nodes[i].control_input[0] > 0:
+                    forward_percentage += percent
+            go_forward = forward_percentage >= 0.5 # Find the ratio of v > 10
+
+            percentage_total, w_total, t_total, gear_best = 0.0, 0.0, 0.0, None
+            for (i, score, j), percent in zip(candidates, percentages):
+                node_v, node_w, node_t = self.resolve_truncated_control(nodes[i], j) # note: will not work with samples turned on
+                if (node_v > 0) != go_forward:
+                    continue # Only keep nodes which are with the largest gear change percentage
+                percentage_total += percent
+                w_total += percent * node_w # Find the weighted w_tot
+                t_total += percent * node_t # Find the weighted t_tot
+                if gear_best is None or score < gear_best[1]:
+                    gear_best = (i, score, j) # Still save the best node... for visualization. But will likely be retired later
+
+            w_average = w_total / percentage_total # weighted average
+            t_average = t_total / percentage_total # weighted. average
+
+            best = gear_best
+            self.softmin_control = (nodes[best[0]].control_input[0], w_average, t_average)
+        
         return best
     
     def reached_root(self, nodes, root_index, x, y, position_threshold):
