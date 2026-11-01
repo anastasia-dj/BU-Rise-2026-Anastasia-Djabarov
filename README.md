@@ -1,7 +1,7 @@
 # Sampling-Based Motion Planning vs. Model-Free RL
 
 ## Overview 
-This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a car-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide a system back to its root, serving as a sample-efficient alternative to model-free reinforcement learning when the simulation budget is limited. 
+This project's goal is to test sampling-based motion planning as an alternative to model-free reinforcement learning in reversible systems. A kinodynamic Rapidly-exploring Random Tree (kRRT) grows a tree of physically drivable trajectories for a unicycle-like robot (x, y, θ). This study investigates whether a kRRT tree, built once for forward planning, can be reused to guide a system back to its root, serving as a sample-efficient alternative to model-free reinforcement learning when the simulation budget is limited. 
 
 The tree building and reversal process is observable end to end, with per-trial animations of the robot and live candidate qualification, failure-mode classification, and parameter sweeps with per-configuration CSV output. The PPO algorithm is also similarly observable.
 
