@@ -78,7 +78,7 @@ The reversal process was additionally validated on hardware across 30 trials wit
 
 ## Status
 ### kRRT
-Current implementations of softmin are undergoing to improve success rate and decrease mean path cost.
+Current implementations of softmin are undergoing refinement to improve success rate and decrease mean path cost.
 
 ## File Organization
 ### kRRT

@@ -8,25 +8,25 @@ Pseudocode:
 #3: Initialize 4 kRRT success table and kRRT path cost table
 
 # PPO Section
-# Repeat x3:
+# Repeat x30:
 #1: Create a PPO convergence with 100,000 samples. Preferably with seeds 1, 2, 3
 #2: Test the positions initialized in STARTING 1
 #3: Fill out a PPO success table and path cost table
-#--- After repeated x3
-#4. Fill out a master PPO success table and path cost table, taking the average of the 3
+#--- After repeated x30
+#4. Fill out a master PPO success table and path cost table, taking the average of the 30
 
 # kRRT Section
-# Repeat x3:
+# Repeat x30:
 #1: Grow a kRRT tree with 100,000 samples (two tree, with softmin). Preferably with seeds 1, 2, 3
 #2: Test the positions initialized in STARTING 1
 #3: Fill out a kRRT success table and path cost table
-#--- After repeated x3
-#4. Fill out a master kRRT success table and path cost table, taking the average of the 3
+#--- After repeated x30
+#4. Fill out a master kRRT success table and path cost table, taking the average of the 30
 
 # Final Prints
 #1. Create 3 CSVS: PPO_TABLES, kRRT_TABLES
-#2. In PPO_TABLES, paste the 8 tables. Keep them separated so it is easy to tell which is which.  State the seed (...if that is even applicable here?)
-#3. In kRRT_TABLES, paste the 8 tables. Keep them separated so it is easy to tell which is which. State the seed
+#2. In PPO_TABLES: 8 tables pasted, kept separated with seed number so it is easy to tell which is which
+#3. In kRRT_TABLES: 8 tables pasted, kept separated with seed number so it is easy to tell which is which
 """
 
 import argparse
