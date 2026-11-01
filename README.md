@@ -172,8 +172,8 @@ The core design decisions (so far) for this implementation:
 - **Bi-directional tree implementation** - Single tree growth biases most node orientations in the same heading of the goal. For this reason, we have implemented a bi-directional tree growth starting from the root, which grows two trees in opposite directions, each with half of the sample budget, and then merges them.
 - **Multi-shot rewiring** - When a cheaper connection is found, the new node shoots 3 batches of increasingly precise randomized-propagations. Within a certain radius, the closest propagation is chosen. Then, the cost between the cost-to-root is compared to the previous, and the cheapest path is chosen.
 - **Approximate Voronoi-bias sampling** - A random point is sampled on the map, and the nearest existing node is propagated. 
-- **|v| fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution
-- **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides
+- **|v| fixed, w and t randomized per edge** - Makes cost calculation easier (cost = v*t) and guarantees each edge is a circular arc with a known closed-form solution.
+- **Theta as a third axis** - The 3-dimensional configuration space shows tree structure that a 2D top-down view hides.
 
 ### PPO
 - **Potential Reward-Shaping** - An implementation of potential reward-shaping from "Policy invariance under reward transformations: Theory and application to reward shaping" (Andrew Y. Ng, Daishi Harada, Stuart Russell) has been added to decrease time to convergence without influencing the optimal policy.
@@ -201,4 +201,4 @@ The core design decisions (so far) for this implementation:
 9. kRRT’s path cost and success rate depend on the initial heading (see the per-heading table above). Originally, we found that having one tree biases the node orientations towards one direction, decreasing node heading diversity. We addressed this by growing a bi-directional tree with the goal as the root. However, there is likely still a lack of nodes holding orientations orthogonal to the goal, which is where the sideways (CW/CCW) starts fall behind.
 
 ## Acknowledgements
-I greatly acknowledge and thank Professor Tron for his support, patience and time throughout the development of this research project. I additionally extend thanks to PhD students Taha Ondongan and Idris Seidu for their mentorship, and to the EPIC and RASTIC laboratories for their invaluable resources and welcoming research environment. I further acknowledge RISE for the opportunity to begin on this research.
+I greatly acknowledge and thank Professor Tron for his support, patience and time throughout the development of this research project. I additionally extend thanks to PhD students Taha Ondogan and Idris Seidu for their mentorship, and to the EPIC and RASTIC laboratories for their invaluable resources and welcoming research environment. I further acknowledge RISE for the opportunity to begin on this research.

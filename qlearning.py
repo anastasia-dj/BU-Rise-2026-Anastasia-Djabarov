@@ -1,3 +1,5 @@
+# Adapted from the Hugging Face Deep RL Course, Unit 2 (Apache-2.0). See THIRD_PARTY_NOTICES.md.
+
 import csv
 
 import numpy as np
